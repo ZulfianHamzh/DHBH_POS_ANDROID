@@ -299,32 +299,40 @@ class SupabaseService {
       var q = _client
           .from('transactions')
           .select('''
-            id, order_no, cashier_id, branch_id, customer_name,
-            terapis_id, terapis_name, notes,
-            customers, terapis,
-            discount,
-            total_amount, amount_paid, change_amount,
-            payment_method, status, print_status, created_at,
-            transaction_items(
-              product_id, product_name, quantity,
-              unit_price, total_price, is_home_visit, notes
-            )
-          ''');
+          id, order_no, cashier_id, branch_id, customer_name,
+          terapis_id, terapis_name, notes,
+          customers, terapis,
+          discount,
+          total_amount, amount_paid, change_amount,
+          payment_method, status, print_status, created_at,
+          cashier:user_profiles!transactions_cashier_id_fkey(
+            full_name
+          ),
+          branch:branches!transactions_branch_id_fkey(
+            name
+          ),
+          transaction_items(
+            product_id, product_name, quantity,
+            unit_price, total_price, is_home_visit, notes
+          )
+        ''');
       if (branchId != null) {
         q = q.eq('branch_id', branchId);
       }
       final data = await q
           .order('created_at', ascending: false)
           .timeout(
-            const Duration(seconds: 6),
-            onTimeout: () {
-              _log('fetchTransactions TIMEOUT', 'Query exceeded 6 seconds');
-              throw TimeoutException('Transactions fetch timeout');
-            },
-          );
+        const Duration(seconds: 6),
+        onTimeout: () {
+          _log('fetchTransactions TIMEOUT', 'Query exceeded 6 seconds');
+          throw TimeoutException('Transactions fetch timeout');
+        },
+      );
 
       _log('fetchTransactions SUCCESS', 'count=${data.length}');
       return data.map<txn.Transaction>((row) {
+        _log('fetchTransactions RAW', row); // Debug raw data
+
         final items = (row['transaction_items'] as List<dynamic>?)?.map((item) {
           return CartItem.fromJson(item as Map<String, dynamic>);
         }).toList() ?? [];
@@ -348,6 +356,26 @@ class SupabaseService {
           }
         }
 
+        // Ambil cashierName dari relasi user_profiles
+        String cashierName = '';
+        if (row['cashier'] is Map) {
+          cashierName = (row['cashier'] as Map)['full_name']?.toString() ?? '';
+        }
+        // Fallback ke cashier_id jika nama tidak ditemukan
+        if (cashierName.isEmpty) {
+          cashierName = row['cashier_id']?.toString() ?? 'Unknown';
+        }
+
+        // Ambil branchName dari relasi branches
+        String? branchName;
+        if (row['branch'] is Map) {
+          branchName = (row['branch'] as Map)['name']?.toString();
+        }
+        // Fallback jika branchName null
+        if (branchName == null || branchName.isEmpty) {
+          branchName = 'Cabang Utama';
+        }
+
         return txn.Transaction(
           id: (row['order_no'] as int).toString(),
           orderNo: row['order_no'] as int,
@@ -359,10 +387,10 @@ class SupabaseService {
           amountPaid: row['amount_paid'] as int,
           change: row['change_amount'] as int? ?? 0,
           paymentMethod: txn.PaymentMethod.values.firstWhere(
-            (m) => m.name == row['payment_method'],
+                (m) => m.name == row['payment_method'],
             orElse: () => txn.PaymentMethod.cash,
           ),
-          cashierName: '',
+          cashierName: cashierName, // Sekarang terisi dari relasi
           customerNames: customerNames.isNotEmpty ? customerNames : null,
           terapisIds: terapisIds.isNotEmpty ? terapisIds : null,
           terapisNames: terapisNames.isNotEmpty ? terapisNames : null,
@@ -370,13 +398,14 @@ class SupabaseService {
           terapisId: row['terapis_id'] as String?,
           terapisName: row['terapis_name'] as String?,
           notes: row['notes'] as String?,
+          branchName: branchName, // Sekarang terisi dari relasi
           createdAt: DateTime.parse(row['created_at'] as String),
           status: txn.TransactionStatus.values.firstWhere(
-            (s) => s.name == row['status'],
+                (s) => s.name == row['status'],
             orElse: () => txn.TransactionStatus.completed,
           ),
           printStatus: txn.PrintStatus.values.firstWhere(
-            (p) => p.name == (row['print_status'] as String?),
+                (p) => p.name == (row['print_status'] as String?),
             orElse: () => txn.PrintStatus.unprinted,
           ),
         );

@@ -240,7 +240,7 @@ class BluetoothService {
     }
   }
 
-  /// Send data to connected device via SPP/RFCOMM
+  /// Send data to connected device via BLE
   Future<bool> sendData(List<int> data) async {
     try {
       if (!isSupported || !_isConnected || _connectedDeviceInternal == null) {
@@ -248,11 +248,6 @@ class BluetoothService {
         return false;
       }
 
-      // Write to the SPP service characteristic
-      // Standard SPP service UUID: 00001101-0000-1000-8000-00805F9B34FB
-      final sppServiceUuid = fbp.Guid('00001101-0000-1000-8000-00805F9B34FB');
-      
-      // Discover services first if needed
       List<fbp.BluetoothService> services;
       try {
         services = await _connectedDeviceInternal!.discoverServices();
@@ -260,21 +255,37 @@ class BluetoothService {
         debugPrint('[Bluetooth] Service discovery error: $e');
         return false;
       }
-      
-      // Find SPP service and write characteristic
+
+      // Dynamic Discovery: Cari karakteristik mana saja yang bisa di-write
       for (var service in services) {
-        if (service.remoteId == sppServiceUuid) {
-          for (var characteristic in service.characteristics) {
-            if (characteristic.properties.write || characteristic.properties.writeWithoutResponse) {
-              await characteristic.write(Uint8List.fromList(data));
-              debugPrint('[Bluetooth] Data sent: ${data.length} bytes');
-              return true;
+        for (var characteristic in service.characteristics) {
+          if (characteristic.properties.write || characteristic.properties.writeWithoutResponse) {
+
+            debugPrint('[Bluetooth] Found writable characteristic: ${characteristic.uuid}');
+
+            // BLE mengharuskan data dipotong-potong
+            const int chunkSize = 150;
+
+            for (int i = 0; i < data.length; i += chunkSize) {
+              int end = (i + chunkSize < data.length) ? i + chunkSize : data.length;
+              List<int> chunk = data.sublist(i, end);
+
+              await characteristic.write(
+                chunk,
+                withoutResponse: characteristic.properties.writeWithoutResponse,
+              );
+
+              // Jeda agar buffer printer tidak penuh
+              await Future.delayed(const Duration(milliseconds: 15));
             }
+
+            debugPrint('[Bluetooth] ✓ Print data sent: ${data.length} bytes');
+            return true;
           }
         }
       }
-      
-      debugPrint('[Bluetooth] SPP service not found');
+
+      debugPrint('[Bluetooth] Writable BLE characteristic not found on this printer');
       return false;
     } catch (e) {
       debugPrint('[Bluetooth] Send error: $e');
