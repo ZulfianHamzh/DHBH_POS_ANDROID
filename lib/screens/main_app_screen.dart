@@ -42,10 +42,6 @@ class _MainAppScreenState extends ConsumerState<MainAppScreen>
   @override
   Widget build(BuildContext context) {
     ResponsiveUtils.init(context);
-
-    // Deteksi apakah perangkat adalah tablet (lebar > 650px)
-    final isTablet = MediaQuery.of(context).size.width > 650;
-
     final posState = ref.watch(posProvider);
     final user = posState.currentUser;
     final today = DateTime.now();
@@ -57,18 +53,19 @@ class _MainAppScreenState extends ConsumerState<MainAppScreen>
           wib.day == today.day;
     }
 
+    // Per-branch today stats (each cabang sees only its own transactions).
     final branchId = user?.branchId;
     final todayTrans = posState.transactions
         .where((t) =>
-    isToday(t.createdAt) &&
-        (branchId == null || t.branchId == branchId) &&
-        t.status.name == 'completed')
+            isToday(t.createdAt) &&
+            (branchId == null || t.branchId == branchId) &&
+            t.status.name == 'completed')
         .length;
     final todayRev = posState.transactions
         .where((t) =>
-    isToday(t.createdAt) &&
-        (branchId == null || t.branchId == branchId) &&
-        t.status.name == 'completed')
+            isToday(t.createdAt) &&
+            (branchId == null || t.branchId == branchId) &&
+            t.status.name == 'completed')
         .fold(0, (sum, t) => sum + t.totalAmount);
     final currencyFormat = NumberFormat.decimalPattern('id');
 
@@ -76,12 +73,11 @@ class _MainAppScreenState extends ConsumerState<MainAppScreen>
       backgroundColor: AppColors.backgroundLight,
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(72),
-        child: _buildAppBar(user, isTablet, todayTrans, todayRev, currencyFormat),
+        child: _buildAppBar(user),
       ),
       body: Column(
         children: [
-          // Hanya tampilkan banner vertikal jika BUKAN tablet
-          if (!isTablet) _buildStatsBanner(todayTrans, todayRev, currencyFormat),
+          _buildStatsBanner(todayTrans, todayRev, currencyFormat),
           Expanded(
             child: TabBarView(
               controller: _tabController,
@@ -99,7 +95,7 @@ class _MainAppScreenState extends ConsumerState<MainAppScreen>
     );
   }
 
-  Widget _buildAppBar(AppUser? user, bool isTablet, int todayTrans, int todayRev, NumberFormat format) {
+  Widget _buildAppBar(AppUser? user) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -117,15 +113,11 @@ class _MainAppScreenState extends ConsumerState<MainAppScreen>
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
-            // PERBAIKAN 1: Gunakan spaceBetween agar kita tidak perlu Spacer() lagi
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               // === Logo + Branch Badge (Kiri) ===
               Flexible(
-                // PERBAIKAN 2: Beri prioritas lebih tinggi jika layar benar-benar sempit
-                flex: 1,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 6),
                   decoration: BoxDecoration(
                     color: AppColors.primaryGreen.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(10),
@@ -150,23 +142,23 @@ class _MainAppScreenState extends ConsumerState<MainAppScreen>
                           color: AppColors.primaryGreen.withValues(alpha: 0.25),
                         ),
                         const SizedBox(width: 8),
-                        // PERBAIKAN 3: Bungkus Badge agar fleksibel menyesuaikan sisa layar
-                        Flexible(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 100),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(
+                                Icon(
                                   Icons.store_outlined,
                                   size: 11,
                                   color: AppColors.primaryGreen,
                                 ),
-                                const SizedBox(width: 4),
+                                const SizedBox(width: 15),
                                 Flexible(
                                   child: Text(
                                     user!.branchName!,
@@ -175,8 +167,7 @@ class _MainAppScreenState extends ConsumerState<MainAppScreen>
                                       fontWeight: FontWeight.w600,
                                       fontSize: 11,
                                     ),
-                                    maxLines: 1, // Akan terlihat utuh, hanya terpotong jika layar HP sangat kecil
-                                    overflow: TextOverflow.ellipsis,
+                                    
                                   ),
                                 ),
                               ],
@@ -189,13 +180,14 @@ class _MainAppScreenState extends ConsumerState<MainAppScreen>
                 ),
               ),
 
-              // === Stats Banner Tengah (Hanya di Tablet) ===
-              if (isTablet)
-                _buildCompactStatsBanner(todayTrans, todayRev, format),
+              // === Spacer: Mendorong elemen setelahnya ke ujung paling kanan ===
+              const Spacer(),
 
-              // === Right Side: Bluetooth + User Profile (Kanan) ===
+              // === Right Side: Bluetooth + User Profile (Kanan / Flex End) ===
               Row(
                 mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   const BluetoothStatusWidget(),
                   const SizedBox(width: 8),
@@ -212,84 +204,14 @@ class _MainAppScreenState extends ConsumerState<MainAppScreen>
       ),
     );
   }
-
-  // Widget khusus untuk menampilkan statistik dengan ringkas di AppBar (Tablet)
-  Widget _buildCompactStatsBanner(int count, int revenue, NumberFormat format) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _buildCompactStatCard(
-          icon: Icons.receipt_outlined,
-          label: 'Transaksi',
-          value: '$count',
-          color: AppColors.primaryGreen,
-        ),
-        const SizedBox(width: 12),
-        Container(width: 1, height: 24, color: Colors.grey.shade300),
-        const SizedBox(width: 12),
-        _buildCompactStatCard(
-          icon: Icons.monetization_on_outlined,
-          label: 'Revenue',
-          value: 'Rp ${format.format(revenue)}',
-          color: AppColors.darkBlue,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCompactStatCard({
-    required IconData icon,
-    required String label,
-    required String value,
-    required Color color,
-  }) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Icon(icon, size: 14, color: color),
-        ),
-        const SizedBox(width: 8),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 9,
-                color: Colors.grey.shade600,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 13,
-                color: AppColors.darkBlue,
-                fontWeight: FontWeight.bold,
-                letterSpacing: -0.2,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  // (Sisa kode ke bawah sama dengan yang Anda miliki sebelumnya)
+  
 
   Widget _buildUserAvatar({
     required String name,
     required String role,
     required VoidCallback onTap,
   }) {
+    // Ambil 2 huruf pertama dari nama untuk avatar
     final initials = _getInitials(name);
 
     return Tooltip(
@@ -306,6 +228,7 @@ class _MainAppScreenState extends ConsumerState<MainAppScreen>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Avatar dengan inisial
               Container(
                 width: 36,
                 height: 36,
@@ -313,7 +236,7 @@ class _MainAppScreenState extends ConsumerState<MainAppScreen>
                   gradient: LinearGradient(
                     colors: [
                       AppColors.primaryGreen,
-                      AppColors.primaryGreen.withValues(alpha: 0.75),
+                      AppColors.primaryGreen.withOpacity(0.75),
                     ],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
@@ -321,7 +244,7 @@ class _MainAppScreenState extends ConsumerState<MainAppScreen>
                   borderRadius: BorderRadius.circular(8),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.primaryGreen.withValues(alpha: 0.25),
+                      color: AppColors.primaryGreen.withOpacity(0.25),
                       blurRadius: 6,
                       offset: const Offset(0, 2),
                     ),
@@ -340,6 +263,7 @@ class _MainAppScreenState extends ConsumerState<MainAppScreen>
                 ),
               ),
               const SizedBox(width: 6),
+              // Name + Role column
               Flexible(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 80),
@@ -350,7 +274,7 @@ class _MainAppScreenState extends ConsumerState<MainAppScreen>
                     children: [
                       Text(
                         role.toUpperCase(),
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: AppColors.primaryGreen,
                           fontSize: 8,
                           fontWeight: FontWeight.bold,
@@ -402,7 +326,6 @@ class _MainAppScreenState extends ConsumerState<MainAppScreen>
     return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
   }
 
-  // Stat banner default untuk tampilan HP
   Widget _buildStatsBanner(int count, int revenue, NumberFormat format) {
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
@@ -449,7 +372,7 @@ class _MainAppScreenState extends ConsumerState<MainAppScreen>
         border: Border.all(color: Colors.grey.shade200),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
+            color: Colors.black.withOpacity(0.03),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -504,7 +427,7 @@ class _MainAppScreenState extends ConsumerState<MainAppScreen>
   Widget _buildBottomNav() {
     return SafeArea(
       child: Container(
-        height: 70,
+        height: 70, // disesuaikan agar tidak kebesaran/kekecilan
         margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
         decoration: BoxDecoration(
           color: Colors.white,
@@ -542,22 +465,23 @@ class _MainAppScreenState extends ConsumerState<MainAppScreen>
   }
 
   Widget _buildNavItem(
-      IconData iconOut,
-      IconData iconFill,
-      String label,
-      int index,
-      ) {
+    IconData iconOut,
+    IconData iconFill,
+    String label,
+    int index,
+  ) {
     return AnimatedBuilder(
       animation: _tabController.animation!,
       builder: (context, child) {
         final isSelected = _tabController.index == index;
         return Tab(
-          height: 65,
+          height: 65, // Mengatur batas tinggi tab agar elemen didalamnya tidak overflow
           child: Container(
             padding: const EdgeInsets.symmetric(vertical: 2),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                // Active indicator dot
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 250),
                   curve: Curves.easeInOut,

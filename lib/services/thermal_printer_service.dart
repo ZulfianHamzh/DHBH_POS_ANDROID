@@ -19,7 +19,6 @@ class ThermalPrinterService {
   static const List<int> _initPrinter = [0x1B, 0x40];
   static const List<int> _centerAlign = [0x1B, 0x61, 0x01];
   static const List<int> _leftAlign = [0x1B, 0x61, 0x00];
-  static const List<int> _rightAlign = [0x1B, 0x61, 0x02];
   static const List<int> _bold = [0x1B, 0x45, 0x01];
   static const List<int> _unbold = [0x1B, 0x45, 0x00];
   static const List<int> _largeFontOn = [0x1B, 0x21, 0x08];
@@ -54,70 +53,6 @@ class ThermalPrinterService {
     }
   }
 
-  /// Helper untuk mengekstrak nama terapis dari berbagai format
-  List<String> _extractTherapistNames(dynamic data) {
-    final names = <String>[];
-
-    if (data == null) return names;
-
-    // Jika data adalah List<String>
-    if (data is List<String>) {
-      for (final name in data) {
-        // Split jika ada koma (misal: "Alan, Siti")
-        if (name.contains(',')) {
-          final parts = name.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty);
-          names.addAll(parts);
-        } else if (name.contains(' dan ')) {
-          // Split jika ada " dan "
-          final parts = name.split(' dan ').map((e) => e.trim()).where((e) => e.isNotEmpty);
-          names.addAll(parts);
-        } else {
-          names.add(name.trim());
-        }
-      }
-      return names;
-    }
-
-    // Jika data adalah List<Map>
-    if (data is List<Map>) {
-      for (final item in data) {
-        final name = item['name']?.toString().trim() ?? '';
-        if (name.isNotEmpty) {
-          // Split jika ada koma
-          if (name.contains(',')) {
-            final parts = name.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty);
-            names.addAll(parts);
-          } else if (name.contains(' dan ')) {
-            final parts = name.split(' dan ').map((e) => e.trim()).where((e) => e.isNotEmpty);
-            names.addAll(parts);
-          } else {
-            names.add(name);
-          }
-        }
-      }
-      return names;
-    }
-
-    // Jika data adalah String
-    if (data is String) {
-      final trimmed = data.trim();
-      if (trimmed.isNotEmpty) {
-        if (trimmed.contains(',')) {
-          final parts = trimmed.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty);
-          names.addAll(parts);
-        } else if (trimmed.contains(' dan ')) {
-          final parts = trimmed.split(' dan ').map((e) => e.trim()).where((e) => e.isNotEmpty);
-          names.addAll(parts);
-        } else {
-          names.add(trimmed);
-        }
-      }
-      return names;
-    }
-
-    return names;
-  }
-
   /// Generate receipt data in ESC/POS format
   List<int> _generateReceipt(Transaction transaction) {
     final receipt = <int>[];
@@ -134,201 +69,115 @@ class ThermalPrinterService {
     receipt.addAll(_lineFeed);
     receipt.addAll(_unbold);
     receipt.addAll(_largeFontOff);
-    receipt.addAll(_printDoubleLine());
 
-    // Branch name (centered, bold)
-    receipt.addAll(_centerAlign);
-    receipt.addAll(_bold);
+    // Branch name (centered)
     if (transaction.branchName != null && transaction.branchName!.isNotEmpty) {
-      receipt.addAll(_stringToBytes(_truncate(transaction.branchName!, _lineWidth)));
-    } else {
-      receipt.addAll(_stringToBytes(_truncate('Cabang Utama', _lineWidth)));
+      receipt.addAll(_stringToBytes(transaction.branchName!));
+      receipt.addAll(_lineFeed);
     }
     receipt.addAll(_lineFeed);
-    receipt.addAll(_unbold);
-    receipt.addAll(_stringToBytes('DHBH POS'));
-    receipt.addAll(_lineFeed);
-    receipt.addAll(_printDoubleLine());
 
     // === INFO SECTION (left aligned) ===
     receipt.addAll(_leftAlign);
-    receipt.addAll(_printRow('Kasir', transaction.cashierName, _lineWidth));
-    receipt.addAll(_printRow('Tanggal', _formatDateTime(WibTime.toWib(transaction.createdAt)), _lineWidth));
-    receipt.addAll(_printRow('No. Transaksi', '#${transaction.id}', _lineWidth));
-    receipt.addAll(_printDottedLine());
+    receipt.addAll(_printRow('Kasir', transaction.cashierName));
+    receipt.addAll(_printRow('Tgl', _formatDateTime(WibTime.toWib(transaction.createdAt))));
+    receipt.addAll(_printRow('No', '#${transaction.id}'));
 
-    // === ITEMS HEADER ===
-    receipt.addAll(_centerAlign);
-    receipt.addAll(_bold);
-    receipt.addAll(_stringToBytes('DETAIL ITEM'));
-    receipt.addAll(_lineFeed);
-    receipt.addAll(_unbold);
-    receipt.addAll(_leftAlign);
+    // Dotted divider
     receipt.addAll(_printDottedLine());
 
     // === ITEMS ===
-    int itemNumber = 1;
     for (var item in transaction.items) {
-      // Item number and name
-      final itemName = _truncate(item.product.name, _lineWidth - 4);
-      receipt.addAll(_stringToBytes('${itemNumber.toString().padLeft(2)}. $itemName'));
+      // Item name (truncated to 32 chars if too long)
+      final itemName = _truncate(item.product.name, _lineWidth);
+      receipt.addAll(_bold);
+      receipt.addAll(_stringToBytes(itemName));
       receipt.addAll(_lineFeed);
+      receipt.addAll(_unbold);
 
-      // Type, quantity, and unit price
+      // Type label + qty + price on one line: "(Klinik) x2          Rp50.000"
       final priceType = item.isHomeVisit ? 'Home Visit' : 'Klinik';
-      final qtyStr = '${item.quantity}x';
+      final qtyStr = 'x${item.quantity}';
+      final priceStr = _formatCurrency(item.totalPrice);
+      final detailLine = '($priceType) $qtyStr';
+      receipt.addAll(_stringToBytes(_padRow(detailLine, priceStr)));
+      receipt.addAll(_lineFeed);
+
+      // Unit price (small, indented)
       final unitPriceStr = _formatCurrency(item.unitPrice);
-      final detailLine = '   $priceType $qtyStr @ $unitPriceStr';
-      receipt.addAll(_stringToBytes(_truncate(detailLine, _lineWidth)));
+      receipt.addAll(_stringToBytes('  @$unitPriceStr'));
       receipt.addAll(_lineFeed);
-
-      // Subtotal for this item (right aligned)
-      final subtotalStr = _formatCurrency(item.totalPrice);
-      receipt.addAll(_rightAlign);
-      receipt.addAll(_stringToBytes('Subtotal: $subtotalStr'));
-      receipt.addAll(_lineFeed);
-      receipt.addAll(_leftAlign);
-
-      // Divider between items
-      if (itemNumber < transaction.items.length) {
-        receipt.addAll(_stringToBytes('-' * _lineWidth));
-        receipt.addAll(_lineFeed);
-      }
-
-      itemNumber++;
     }
 
     // Double divider before total
     receipt.addAll(_printDoubleLine());
 
     // Subtotal & Diskon (if any)
-    receipt.addAll(_leftAlign);
-    receipt.addAll(_printRow('Subtotal', _formatCurrency(transaction.subtotal), _lineWidth));
-
     if (transaction.discount > 0) {
-      receipt.addAll(_printRow('Diskon', '-${_formatCurrency(transaction.discount)}', _lineWidth));
+      receipt.addAll(_printRow('Subtotal', _formatCurrency(transaction.subtotal)));
+      receipt.addAll(_printRow('Diskon', '-${_formatCurrency(transaction.discount)}'));
+      receipt.addAll(_printDottedLine());
     }
-
-    receipt.addAll(_printDottedLine());
 
     // === TOTAL (centered, large, bold) ===
     receipt.addAll(_centerAlign);
     receipt.addAll(_bold);
     receipt.addAll(_largeFontOn);
+    final totalStr = _formatCurrency(transaction.totalAmount);
     receipt.addAll(_stringToBytes('TOTAL'));
     receipt.addAll(_lineFeed);
-    receipt.addAll(_stringToBytes(_formatCurrency(transaction.totalAmount)));
+    receipt.addAll(_stringToBytes(totalStr));
     receipt.addAll(_lineFeed);
     receipt.addAll(_largeFontOff);
     receipt.addAll(_unbold);
+
+    // Single divider
+    receipt.addAll(_leftAlign);
     receipt.addAll(_printDottedLine());
 
     // === PAYMENT INFO (compact key-value) ===
-    receipt.addAll(_leftAlign);
-    receipt.addAll(_bold);
-    receipt.addAll(_stringToBytes('PEMBAYARAN'));
-    receipt.addAll(_lineFeed);
-    receipt.addAll(_unbold);
-    receipt.addAll(_printDottedLine());
-
-    receipt.addAll(_printRow('Metode', transaction.paymentMethod.displayName, _lineWidth));
+    receipt.addAll(_printRow('Bayar', transaction.paymentMethod.displayName));
     if (transaction.paymentMethod == PaymentMethod.cash) {
-      receipt.addAll(_printRow('Dibayar', _formatCurrency(transaction.amountPaid), _lineWidth));
-      receipt.addAll(_printRow('Kembali', _formatCurrency(transaction.change), _lineWidth));
+      receipt.addAll(_printRow('Dibayar', _formatCurrency(transaction.amountPaid)));
+      receipt.addAll(_printRow('Kembali', _formatCurrency(transaction.change)));
     }
+
+    // Dotted divider before additional info
     receipt.addAll(_printDottedLine());
 
-    // === CUSTOMER & THERAPIST INFO ===
-    if (transaction.customerNames.isNotEmpty) {
-      receipt.addAll(_bold);
-      receipt.addAll(_stringToBytes('PELANGGAN'));
-      receipt.addAll(_lineFeed);
-      receipt.addAll(_unbold);
-
-      // Extract and clean customer names
-      final allCustomers = <String>[];
-      for (final name in transaction.customerNames) {
-        final extracted = _extractTherapistNames(name);
-        allCustomers.addAll(extracted);
-      }
-
-      // Group and count
-      final customerCount = <String, int>{};
-      for (final name in allCustomers) {
-        if (name.isNotEmpty) {
-          customerCount[name] = (customerCount[name] ?? 0) + 1;
-        }
-      }
-
-      final sortedEntries = customerCount.entries.toList()
-        ..sort((a, b) => a.key.compareTo(b.key));
-
-      for (final entry in sortedEntries) {
-        final line = '   ${entry.key}';
-        receipt.addAll(_stringToBytes(_truncate(line, _lineWidth)));
+    // === ADDITIONAL INFO ===
+    for (var i = 0; i < transaction.customerNames.length; i++) {
+      if (i == 0) {
+        receipt.addAll(_printRow('Pelanggan',
+            _truncate(transaction.customerNames[i], _lineWidth - 10)));
+      } else {
+        receipt.addAll(_stringToBytes(
+            '  ${_truncate(transaction.customerNames[i], _lineWidth - 2)}'));
         receipt.addAll(_lineFeed);
       }
-
-      receipt.addAll(_printDottedLine());
     }
-
-    if (transaction.terapisNames.isNotEmpty) {
-      receipt.addAll(_bold);
-      receipt.addAll(_stringToBytes('TERAPIS'));
-      receipt.addAll(_lineFeed);
-      receipt.addAll(_unbold);
-
-      // Extract and clean therapist names
-      final allTherapists = <String>[];
-      for (final name in transaction.terapisNames) {
-        final extracted = _extractTherapistNames(name);
-        allTherapists.addAll(extracted);
-      }
-
-      // Group therapists by name and count
-      final therapistCount = <String, int>{};
-      for (final name in allTherapists) {
-        final cleanName = name.trim();
-        if (cleanName.isNotEmpty) {
-          therapistCount[cleanName] = (therapistCount[cleanName] ?? 0) + 1;
-        }
-      }
-
-      // Sort by count (descending) then by name
-      final sortedEntries = therapistCount.entries.toList()
-        ..sort((a, b) {
-          final countCompare = b.value.compareTo(a.value);
-          if (countCompare != 0) return countCompare;
-          return a.key.compareTo(b.key);
-        });
-
-      for (final entry in sortedEntries) {
-        final line = '   ${entry.key} ${entry.value}x';
-        receipt.addAll(_stringToBytes(_truncate(line, _lineWidth)));
+    for (var i = 0; i < transaction.terapisNames.length; i++) {
+      if (i == 0) {
+        receipt.addAll(_printRow('Terapis',
+            _truncate(transaction.terapisNames[i], _lineWidth - 8)));
+      } else {
+        receipt.addAll(_stringToBytes(
+            '  ${_truncate(transaction.terapisNames[i], _lineWidth - 2)}'));
         receipt.addAll(_lineFeed);
       }
-
-      receipt.addAll(_printDottedLine());
     }
-
-    // Notes
     if (transaction.notes != null && transaction.notes!.isNotEmpty) {
-      receipt.addAll(_bold);
-      receipt.addAll(_stringToBytes('CATATAN'));
+      receipt.addAll(_stringToBytes('Catatan:'));
       receipt.addAll(_lineFeed);
-      receipt.addAll(_unbold);
-      final notes = _wrapText(transaction.notes!, _lineWidth - 2);
-      for (final line in notes) {
-        receipt.addAll(_stringToBytes('  $line'));
-        receipt.addAll(_lineFeed);
-      }
-      receipt.addAll(_printDottedLine());
+      receipt.addAll(_stringToBytes(' ${_truncate(transaction.notes!, _lineWidth - 1)}'));
+      receipt.addAll(_lineFeed);
     }
 
     // === FOOTER ===
+    receipt.addAll(_printDottedLine());
     receipt.addAll(_centerAlign);
     receipt.addAll(_bold);
-    receipt.addAll(_stringToBytes('TERIMA KASIH!'));
+    receipt.addAll(_stringToBytes('Terima Kasih!'));
     receipt.addAll(_lineFeed);
     receipt.addAll(_unbold);
     receipt.addAll(_stringToBytes('Selamat datang kembali'));
@@ -340,43 +189,6 @@ class ThermalPrinterService {
     receipt.addAll(_cutPaper);
 
     return receipt;
-  }
-
-  /// Helper untuk mengekstrak dan membersihkan daftar terapis dari berbagai format
-  List<Map<String, dynamic>> _cleanTherapistList(List<Map<String, dynamic>> terapis) {
-    final cleaned = <Map<String, dynamic>>[];
-    final seenNames = <String>{};
-
-    for (final t in terapis) {
-      final rawName = (t['name'] as String?) ?? '';
-      if (rawName.isEmpty) continue;
-
-      // Jika nama mengandung koma, split
-      if (rawName.contains(',')) {
-        final parts = rawName.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty);
-        for (final part in parts) {
-          if (!seenNames.contains(part)) {
-            seenNames.add(part);
-            cleaned.add({'name': part});
-          }
-        }
-      } else if (rawName.contains(' dan ')) {
-        final parts = rawName.split(' dan ').map((e) => e.trim()).where((e) => e.isNotEmpty);
-        for (final part in parts) {
-          if (!seenNames.contains(part)) {
-            seenNames.add(part);
-            cleaned.add({'name': part});
-          }
-        }
-      } else {
-        if (!seenNames.contains(rawName)) {
-          seenNames.add(rawName);
-          cleaned.add({'name': rawName});
-        }
-      }
-    }
-
-    return cleaned;
   }
 
   /// Generate closing report receipt
@@ -398,7 +210,7 @@ class ThermalPrinterService {
     receipt.addAll(_initPrinter);
     receipt.addAll(_lineFeed);
 
-    // === HEADER ===
+    // === TITLE ===
     receipt.addAll(_centerAlign);
     receipt.addAll(_bold);
     receipt.addAll(_largeFontOn);
@@ -406,67 +218,36 @@ class ThermalPrinterService {
     receipt.addAll(_lineFeed);
     receipt.addAll(_unbold);
     receipt.addAll(_largeFontOff);
-    receipt.addAll(_printDoubleLine());
+    receipt.addAll(_stringToBytes('PENJUALAN & TRANSAKSI DHBH'));
+    receipt.addAll(_lineFeed);
 
-    // Branch name
-    receipt.addAll(_centerAlign);
-    receipt.addAll(_bold);
-    receipt.addAll(_stringToBytes(_truncate(branchName, _lineWidth)));
-    receipt.addAll(_lineFeed);
-    receipt.addAll(_unbold);
-    receipt.addAll(_stringToBytes('DHBH POS'));
-    receipt.addAll(_lineFeed);
+    // Double line
+    receipt.addAll(_leftAlign);
     receipt.addAll(_printDoubleLine());
 
     // === INFO ===
-    receipt.addAll(_leftAlign);
-    receipt.addAll(_printRow('Kasir', _truncate(cashierName, 20), _lineWidth));
-    receipt.addAll(_printRow('Buka', _formatDateTime(waktuBuka), _lineWidth));
-    receipt.addAll(_printRow('Tutup', _formatDateTime(waktuTutup), _lineWidth));
+    receipt.addAll(_printRow('Cabang', _truncate(branchName, 20)));
+    receipt.addAll(_printRow('Kasir', _truncate(cashierName, 20)));
+    receipt.addAll(_printRow('Buka', _formatDateTime(waktuBuka)));
+    receipt.addAll(_printRow('Tutup', _formatDateTime(waktuTutup)));
+
     receipt.addAll(_printDoubleLine());
 
-    // === TERAPIS SUMMARY ===
+    // === TERAPIS ===
     if (terapis.isNotEmpty) {
       receipt.addAll(_centerAlign);
       receipt.addAll(_bold);
-      receipt.addAll(_stringToBytes('DAFTAR TERAPIS'));
+      receipt.addAll(_stringToBytes('TERAPIS'));
       receipt.addAll(_lineFeed);
       receipt.addAll(_unbold);
       receipt.addAll(_leftAlign);
-      receipt.addAll(_printDottedLine());
-
-      // Clean and group therapists
-      final cleanedTerapis = _cleanTherapistList(terapis);
-
-      // Group therapists by name and count from original data
-      final therapistCount = <String, int>{};
       for (final t in terapis) {
-        final rawName = (t['name'] as String?) ?? '';
-        if (rawName.isEmpty) continue;
-
-        // Extract all names from this entry
-        final names = _extractTherapistNames(rawName);
-        for (final name in names) {
-          if (name.isNotEmpty) {
-            therapistCount[name] = (therapistCount[name] ?? 0) + 1;
-          }
+        final name = (t['name'] as String?) ?? '';
+        if (name.isNotEmpty) {
+          receipt.addAll(_stringToBytes(_truncate(name, _lineWidth)));
+          receipt.addAll(_lineFeed);
         }
       }
-
-      // Sort by count (descending) then by name
-      final sortedEntries = therapistCount.entries.toList()
-        ..sort((a, b) {
-          final countCompare = b.value.compareTo(a.value);
-          if (countCompare != 0) return countCompare;
-          return a.key.compareTo(b.key);
-        });
-
-      for (final entry in sortedEntries) {
-        final line = '• ${entry.key} ${entry.value}x';
-        receipt.addAll(_stringToBytes(_truncate(line, _lineWidth)));
-        receipt.addAll(_lineFeed);
-      }
-
       receipt.addAll(_printDottedLine());
     }
 
@@ -485,58 +266,37 @@ class ThermalPrinterService {
       receipt.addAll(_lineFeed);
       receipt.addAll(_leftAlign);
     } else {
-      // Group products by name
-      final productSummary = <String, Map<String, dynamic>>{};
       for (final product in productsSold) {
         final name = (product['name'] as String? ?? '');
         final qty = product['qty'] as int? ?? 0;
         final price = product['total'] as int? ?? 0;
 
-        if (name.isNotEmpty) {
-          if (productSummary.containsKey(name)) {
-            productSummary[name]!['qty'] = (productSummary[name]!['qty'] as int) + qty;
-            productSummary[name]!['total'] = (productSummary[name]!['total'] as int) + price;
-          } else {
-            productSummary[name] = {
-              'qty': qty,
-              'total': price,
-            };
-          }
-        }
-      }
-
-      // Sort by total (descending)
-      final sortedProducts = productSummary.entries.toList()
-        ..sort((a, b) => (b.value['total'] as int).compareTo(a.value['total'] as int));
-
-      for (final entry in sortedProducts) {
-        final name = entry.key;
-        final qty = entry.value['qty'] as int;
-        final price = entry.value['total'] as int;
-
+        // Line 1: Name (truncated)
         receipt.addAll(_stringToBytes(_truncate(name, _lineWidth)));
         receipt.addAll(_lineFeed);
-        receipt.addAll(_rightAlign);
-        receipt.addAll(_stringToBytes('${qty}x  ${_formatCurrency(price)}'));
+        // Line 2: " x{qty}              Rp{price}"
+        receipt.addAll(_stringToBytes(_padRow('  x$qty', _formatCurrency(price))));
         receipt.addAll(_lineFeed);
-        receipt.addAll(_leftAlign);
       }
     }
+
     receipt.addAll(_printDottedLine());
 
     // === TOTAL PRODUK ===
     receipt.addAll(_bold);
-    receipt.addAll(_printRow('Total Penjualan', _formatCurrency(totalPenerimaan), _lineWidth));
+    receipt.addAll(_printRow('Total Produk', _formatCurrency(totalPenerimaan)));
     receipt.addAll(_unbold);
+
     receipt.addAll(_printDoubleLine());
 
     // === MODAL AWAL ===
     receipt.addAll(_bold);
-    receipt.addAll(_printRow('MODAL AWAL', _formatCurrency(modalAwal), _lineWidth));
+    receipt.addAll(_printRow('MODAL AWAL', _formatCurrency(modalAwal)));
     receipt.addAll(_unbold);
+
     receipt.addAll(_printDoubleLine());
 
-    // === PENERIMAAN PER METODE ===
+    // === PENERIMAAN ===
     receipt.addAll(_centerAlign);
     receipt.addAll(_bold);
     receipt.addAll(_stringToBytes('PENERIMAAN'));
@@ -551,24 +311,13 @@ class ThermalPrinterService {
       receipt.addAll(_lineFeed);
       receipt.addAll(_leftAlign);
     } else {
-      // Group payments by method
-      final paymentSummary = <String, int>{};
       for (final payment in payments) {
         final method = payment['method'] as String? ?? '';
         final amount = payment['amount'] as int? ?? 0;
-        if (method.isNotEmpty) {
-          paymentSummary[method] = (paymentSummary[method] ?? 0) + amount;
-        }
-      }
-
-      // Sort by amount (descending)
-      final sortedPayments = paymentSummary.entries.toList()
-        ..sort((a, b) => b.value.compareTo(a.value));
-
-      for (final entry in sortedPayments) {
-        receipt.addAll(_printRow(entry.key, _formatCurrency(entry.value), _lineWidth));
+        receipt.addAll(_printRow(method, _formatCurrency(amount)));
       }
     }
+
     receipt.addAll(_printDoubleLine());
 
     // === TOTAL PENERIMAAN (big) ===
@@ -581,13 +330,14 @@ class ThermalPrinterService {
     receipt.addAll(_lineFeed);
     receipt.addAll(_largeFontOff);
     receipt.addAll(_unbold);
-    receipt.addAll(_printDottedLine());
 
     // === SALDO AKHIR ===
     receipt.addAll(_leftAlign);
+    receipt.addAll(_printDottedLine());
     receipt.addAll(_bold);
-    receipt.addAll(_printRow('SALDO AKHIR', _formatCurrency(modalAwal + totalPenerimaan), _lineWidth));
+    receipt.addAll(_printRow('SALDO AKHIR', _formatCurrency(modalAwal + totalPenerimaan)));
     receipt.addAll(_unbold);
+
     receipt.addAll(_printDoubleLine());
 
     // === RINGKASAN TRANSAKSI ===
@@ -598,18 +348,14 @@ class ThermalPrinterService {
     receipt.addAll(_lineFeed);
     receipt.addAll(_unbold);
     receipt.addAll(_leftAlign);
-    receipt.addAll(_printDottedLine());
-    receipt.addAll(_printRow('Transaksi Selesai', '$totalTransaksiSelesai', _lineWidth));
-    receipt.addAll(_printRow('Transaksi Hold', '$totalTransaksiHold', _lineWidth));
-    receipt.addAll(_printRow('Total Item', '$totalQty', _lineWidth));
-    receipt.addAll(_printDottedLine());
+    receipt.addAll(_printRow('Transaksi Selesai', '$totalTransaksiSelesai'));
+    receipt.addAll(_printRow('Transaksi Hold', '$totalTransaksiHold'));
+    receipt.addAll(_printRow('Total Item', '$totalQty'));
 
     // === FOOTER ===
+    receipt.addAll(_printDoubleLine());
     receipt.addAll(_centerAlign);
-    receipt.addAll(_bold);
-    receipt.addAll(_stringToBytes('Terima Kasih'));
-    receipt.addAll(_lineFeed);
-    receipt.addAll(_unbold);
+    receipt.addAll(_stringToBytes('Terima kasih'));
     receipt.addAll(_lineFeed);
     receipt.addAll(_lineFeed);
     receipt.addAll(_lineFeed);
@@ -630,14 +376,13 @@ class ThermalPrinterService {
     required int qris,
     required int refund,
     required List<Map<String, dynamic>> terapis,
-    required List<Map<String, dynamic>> productsSold,
   }) {
     final receipt = <int>[];
 
     receipt.addAll(_initPrinter);
     receipt.addAll(_lineFeed);
 
-    // === HEADER ===
+    // === TITLE ===
     receipt.addAll(_centerAlign);
     receipt.addAll(_bold);
     receipt.addAll(_largeFontOn);
@@ -645,125 +390,36 @@ class ThermalPrinterService {
     receipt.addAll(_lineFeed);
     receipt.addAll(_unbold);
     receipt.addAll(_largeFontOff);
-    receipt.addAll(_printDoubleLine());
+    receipt.addAll(_stringToBytes('PENJUALAN & TRANSAKSI DHBH'));
+    receipt.addAll(_lineFeed);
 
-    // Branch name
-    receipt.addAll(_centerAlign);
-    receipt.addAll(_bold);
-    receipt.addAll(_stringToBytes(_truncate(branchName, _lineWidth)));
-    receipt.addAll(_lineFeed);
-    receipt.addAll(_unbold);
-    receipt.addAll(_stringToBytes('DHBH POS'));
-    receipt.addAll(_lineFeed);
+    receipt.addAll(_leftAlign);
     receipt.addAll(_printDoubleLine());
 
     // === INFO ===
-    receipt.addAll(_leftAlign);
-    receipt.addAll(_printRow('Kasir', _truncate(cashierName, 20), _lineWidth));
-    receipt.addAll(_printRow('Tanggal', _formatDateTime(tanggal), _lineWidth));
+    receipt.addAll(_printRow('Cabang', _truncate(branchName, 20)));
+    receipt.addAll(_printRow('Kasir', _truncate(cashierName, 20)));
+    receipt.addAll(_printRow('Tanggal', _formatDateTime(tanggal)));
+
     receipt.addAll(_printDoubleLine());
 
-    // === TERAPIS SUMMARY ===
+    // === TERAPIS ===
     if (terapis.isNotEmpty) {
       receipt.addAll(_centerAlign);
       receipt.addAll(_bold);
-      receipt.addAll(_stringToBytes('DAFTAR TERAPIS'));
+      receipt.addAll(_stringToBytes('TERAPIS'));
       receipt.addAll(_lineFeed);
       receipt.addAll(_unbold);
       receipt.addAll(_leftAlign);
-      receipt.addAll(_printDottedLine());
-
-      // Group therapists by name and count
-      final therapistCount = <String, int>{};
       for (final t in terapis) {
-        final rawName = (t['name'] as String?) ?? '';
-        if (rawName.isEmpty) continue;
-
-        // Extract all names from this entry
-        final names = _extractTherapistNames(rawName);
-        for (final name in names) {
-          if (name.isNotEmpty) {
-            therapistCount[name] = (therapistCount[name] ?? 0) + 1;
-          }
+        final name = (t['name'] as String?) ?? '';
+        if (name.isNotEmpty) {
+          receipt.addAll(_stringToBytes(_truncate(name, _lineWidth)));
+          receipt.addAll(_lineFeed);
         }
       }
-
-      // Sort by count (descending) then by name
-      final sortedEntries = therapistCount.entries.toList()
-        ..sort((a, b) {
-          final countCompare = b.value.compareTo(a.value);
-          if (countCompare != 0) return countCompare;
-          return a.key.compareTo(b.key);
-        });
-
-      for (final entry in sortedEntries) {
-        final line = '• ${entry.key} ${entry.value}x';
-        receipt.addAll(_stringToBytes(_truncate(line, _lineWidth)));
-        receipt.addAll(_lineFeed);
-      }
-
       receipt.addAll(_printDottedLine());
     }
-
-    // === PRODUCTS SOLD ===
-    receipt.addAll(_centerAlign);
-    receipt.addAll(_bold);
-    receipt.addAll(_stringToBytes('PRODUK TERJUAL'));
-    receipt.addAll(_lineFeed);
-    receipt.addAll(_unbold);
-    receipt.addAll(_leftAlign);
-    receipt.addAll(_printDottedLine());
-
-    if (productsSold.isEmpty) {
-      receipt.addAll(_centerAlign);
-      receipt.addAll(_stringToBytes('(Tidak ada produk)'));
-      receipt.addAll(_lineFeed);
-      receipt.addAll(_leftAlign);
-    } else {
-      // Group products by name
-      final productSummary = <String, Map<String, dynamic>>{};
-      for (final product in productsSold) {
-        final name = (product['name'] as String? ?? '');
-        final qty = product['qty'] as int? ?? 0;
-        final price = product['total'] as int? ?? 0;
-
-        if (name.isNotEmpty) {
-          if (productSummary.containsKey(name)) {
-            productSummary[name]!['qty'] = (productSummary[name]!['qty'] as int) + qty;
-            productSummary[name]!['total'] = (productSummary[name]!['total'] as int) + price;
-          } else {
-            productSummary[name] = {
-              'qty': qty,
-              'total': price,
-            };
-          }
-        }
-      }
-
-      // Sort by total (descending)
-      final sortedProducts = productSummary.entries.toList()
-        ..sort((a, b) => (b.value['total'] as int).compareTo(a.value['total'] as int));
-
-      for (final entry in sortedProducts) {
-        final name = entry.key;
-        final qty = entry.value['qty'] as int;
-        final price = entry.value['total'] as int;
-
-        receipt.addAll(_stringToBytes(_truncate(name, _lineWidth)));
-        receipt.addAll(_lineFeed);
-        receipt.addAll(_rightAlign);
-        receipt.addAll(_stringToBytes('${qty}x  ${_formatCurrency(price)}'));
-        receipt.addAll(_lineFeed);
-        receipt.addAll(_leftAlign);
-      }
-    }
-    receipt.addAll(_printDottedLine());
-
-    // === TOTAL PRODUK ===
-    receipt.addAll(_bold);
-    receipt.addAll(_printRow('Total Penjualan', _formatCurrency(totalRevenue), _lineWidth));
-    receipt.addAll(_unbold);
-    receipt.addAll(_printDoubleLine());
 
     // === TOTALS ===
     receipt.addAll(_centerAlign);
@@ -772,9 +428,9 @@ class ThermalPrinterService {
     receipt.addAll(_lineFeed);
     receipt.addAll(_unbold);
     receipt.addAll(_leftAlign);
-    receipt.addAll(_printDottedLine());
-    receipt.addAll(_printRow('Jumlah Transaksi', '$totalTransaksi', _lineWidth));
-    receipt.addAll(_printRow('Total Revenue', _formatCurrency(totalRevenue), _lineWidth));
+    receipt.addAll(_printRow('Jumlah Transaksi', '$totalTransaksi'));
+    receipt.addAll(_printRow('Total Revenue', _formatCurrency(totalRevenue)));
+
     receipt.addAll(_printDoubleLine());
 
     // === PENERIMAAN PER METODE ===
@@ -785,12 +441,13 @@ class ThermalPrinterService {
     receipt.addAll(_unbold);
     receipt.addAll(_leftAlign);
     receipt.addAll(_printDottedLine());
-    receipt.addAll(_printRow('Cash', _formatCurrency(cash), _lineWidth));
-    receipt.addAll(_printRow('Transfer', _formatCurrency(transfer), _lineWidth));
-    receipt.addAll(_printRow('QRIS', _formatCurrency(qris), _lineWidth));
+    receipt.addAll(_printRow('Cash', _formatCurrency(cash)));
+    receipt.addAll(_printRow('Transfer', _formatCurrency(transfer)));
+    receipt.addAll(_printRow('QRIS', _formatCurrency(qris)));
     if (refund > 0) {
-      receipt.addAll(_printRow('Refund', '-${_formatCurrency(refund)}', _lineWidth));
+      receipt.addAll(_printRow('Refund', '-${_formatCurrency(refund)}'));
     }
+
     receipt.addAll(_printDoubleLine());
 
     // === TOTAL PENERIMAAN (big) ===
@@ -803,14 +460,12 @@ class ThermalPrinterService {
     receipt.addAll(_lineFeed);
     receipt.addAll(_largeFontOff);
     receipt.addAll(_unbold);
-    receipt.addAll(_printDottedLine());
 
     // === FOOTER ===
+    receipt.addAll(_leftAlign);
+    receipt.addAll(_printDoubleLine());
     receipt.addAll(_centerAlign);
-    receipt.addAll(_bold);
-    receipt.addAll(_stringToBytes('Terima Kasih'));
-    receipt.addAll(_lineFeed);
-    receipt.addAll(_unbold);
+    receipt.addAll(_stringToBytes('Terima kasih'));
     receipt.addAll(_lineFeed);
     receipt.addAll(_lineFeed);
     receipt.addAll(_lineFeed);
@@ -874,7 +529,6 @@ class ThermalPrinterService {
     required int qris,
     required int refund,
     required List<Map<String, dynamic>> terapis,
-    required List<Map<String, dynamic>> productsSold,
   }) async {
     try {
       if (!_bluetooth.isConnected) {
@@ -893,7 +547,6 @@ class ThermalPrinterService {
         qris: qris,
         refund: refund,
         terapis: terapis,
-        productsSold: productsSold,
       );
 
       final result = await _bluetooth.sendData(data);
@@ -914,20 +567,20 @@ class ThermalPrinterService {
     return List<int>.from(text.codeUnits);
   }
 
-  /// Membuat baris dengan label di kiri dan value di kanan
-  /// [lineWidth] menentukan lebar total baris (default: 32)
-  List<int> _printRow(String label, String value, int lineWidth) {
-    final row = _stringToBytes(_padRow('$label:', value, lineWidth));
+  /// Membuat baris dengan label di kiri dan value di kanan, tepat 32 karakter.
+  /// Contoh: "Kasir: John              Rp100.000"
+  List<int> _printRow(String label, String value) {
+    final row = _stringToBytes(_padRow('$label:', value));
     row.addAll(_lineFeed);
     return row;
   }
 
-  /// Pad row: label di kiri, value di kanan dengan lebar tertentu
-  /// Jika total panjang melebihi lineWidth, value dipotong dari kiri dengan "..."
-  String _padRow(String left, String right, int lineWidth) {
-    final available = lineWidth - left.length;
+  /// Pad row: label di kiri, value di kanan, total 32 karakter.
+  /// Jika total panjang melebihi 32, value dipotong dari kiri dengan "...".
+  String _padRow(String left, String right) {
+    final available = _lineWidth - left.length;
     if (available <= 0) {
-      return left.substring(0, lineWidth);
+      return left.substring(0, _lineWidth);
     }
     String trimmedRight = right;
     if (right.length > available) {
@@ -937,80 +590,25 @@ class ThermalPrinterService {
     return '$left$spaces$trimmedRight';
   }
 
-  /// Print dotted line dengan panjang tertentu (default: 32)
-  List<int> _printDottedLine({int length = _lineWidth}) {
-    final line = _stringToBytes('-' * length);
+  /// Print dotted line (--------------------------------) 32 karakter.
+  List<int> _printDottedLine() {
+    final line = _stringToBytes('-' * _lineWidth);
     line.addAll(_lineFeed);
     return line;
   }
 
-  /// Print double line dengan panjang tertentu (default: 32)
-  List<int> _printDoubleLine({int length = _lineWidth}) {
-    final line = _stringToBytes('=' * length);
+  /// Print double line (================================) untuk penekanan.
+  List<int> _printDoubleLine() {
+    final line = _stringToBytes('=' * _lineWidth);
     line.addAll(_lineFeed);
     return line;
   }
 
-  /// Print custom line dengan karakter tertentu
-  List<int> _printCustomLine({required String char, required int length, bool addNewLine = true}) {
-    final line = _stringToBytes(char * length);
-    if (addNewLine) {
-      line.addAll(_lineFeed);
-    }
-    return line;
-  }
-
-  /// Truncate text ke maxChars dengan menambahkan "..." di akhir
+  /// Truncate text ke maxChars dengan menambahkan "..." di akhir.
   String _truncate(String text, int maxChars) {
-    if (text.isEmpty) return '';
     if (text.length <= maxChars) return text;
     if (maxChars <= 3) return text.substring(0, maxChars);
     return '${text.substring(0, maxChars - 3)}...';
-  }
-
-  /// Wrap text menjadi beberapa baris dengan lebar tertentu
-  List<String> _wrapText(String text, int maxChars) {
-    if (text.isEmpty) return [];
-
-    final lines = <String>[];
-    String remaining = text.trim();
-
-    while (remaining.isNotEmpty) {
-      if (remaining.length <= maxChars) {
-        lines.add(remaining);
-        break;
-      }
-
-      // Cari spasi terakhir sebelum maxChars
-      int breakPoint = remaining.lastIndexOf(' ', maxChars);
-      if (breakPoint == -1) {
-        breakPoint = maxChars;
-      }
-
-      lines.add(remaining.substring(0, breakPoint));
-      remaining = remaining.substring(breakPoint).trim();
-    }
-
-    return lines;
-  }
-
-  /// Format string dengan padding center
-  String _centerText(String text, int lineWidth) {
-    if (text.length >= lineWidth) return text;
-    final padding = (lineWidth - text.length) ~/ 2;
-    return ' ' * padding + text + ' ' * (lineWidth - text.length - padding);
-  }
-
-  /// Format string dengan padding right
-  String _rightText(String text, int lineWidth) {
-    if (text.length >= lineWidth) return text;
-    return ' ' * (lineWidth - text.length) + text;
-  }
-
-  /// Format string dengan padding left
-  String _leftText(String text, int lineWidth) {
-    if (text.length >= lineWidth) return text;
-    return text + ' ' * (lineWidth - text.length);
   }
 
   /// Format date time ke dd/MM/yyyy HH:mm
@@ -1022,12 +620,8 @@ class ThermalPrinterService {
         '${dateTime.minute.toString().padLeft(2, '0')}';
   }
 
-  /// Format currency dengan pemisah titik ribuan
+  /// Format currency dengan pemisah titik ribuan.
   String _formatCurrency(int amount) {
-    if (amount < 0) {
-      return '-${_formatCurrency(amount.abs())}';
-    }
-
     final formatter = amount.toString();
     if (formatter.length <= 3) return 'Rp$formatter';
 
@@ -1037,24 +631,5 @@ class ThermalPrinterService {
       chunks.add(reversed.sublist(i, i + 3 < reversed.length ? i + 3 : reversed.length).reversed.join());
     }
     return 'Rp${chunks.reversed.join('.')}';
-  }
-
-  /// Format currency dengan padding (untuk right alignment)
-  String _formatCurrencyPadded(int amount, int lineWidth) {
-    final formatted = _formatCurrency(amount);
-    return _rightText(formatted, lineWidth);
-  }
-
-  /// Create a divider line with custom character
-  String _createDivider({String char = '-', int length = _lineWidth}) {
-    return char * length;
-  }
-
-  /// Create a section header with padding
-  String _createSectionHeader(String title, {String leftChar = ' ', String rightChar = ' '}) {
-    final padding = (_lineWidth - title.length - 2) ~/ 2;
-    final leftPadding = leftChar * padding;
-    final rightPadding = rightChar * (padding);
-    return '$leftPadding $title $rightPadding';
   }
 }

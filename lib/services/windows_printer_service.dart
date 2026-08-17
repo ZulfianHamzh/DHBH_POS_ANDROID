@@ -106,7 +106,7 @@ class WindowsPrinterService {
     required int transfer,
     required int qris,
     required int refund,
-    required List<Map<String, dynamic>> terapis, required List<Map<String, dynamic>> productsSold,
+    required List<Map<String, dynamic>> terapis,
   }) {
     debugPrint('$_tag printDailySummary');
     return _printDoc(

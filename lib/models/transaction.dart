@@ -60,7 +60,6 @@ class Transaction {
   final PaymentMethod paymentMethod;
   final String cashierName;
 
-
   /// Discount amount (Rupiah) applied to this transaction. [totalAmount] is
   /// the GRAND TOTAL after discount; [subtotal] = totalAmount + discount.
   final int discount;

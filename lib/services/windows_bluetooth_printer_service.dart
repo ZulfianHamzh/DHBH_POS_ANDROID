@@ -335,7 +335,7 @@ class WindowsBluetoothPrinterService {
     required int transfer,
     required int qris,
     required int refund,
-    required List<Map<String, dynamic>> terapis, required List<Map<String, dynamic>> productsSold,
+    required List<Map<String, dynamic>> terapis,
   }) async {
     if (!isSupported || _connectedPrinter == null) {
       debugPrint('$_tag printDailySummary: not connected');

@@ -12,7 +12,6 @@ import 'bluetooth_connection_dialog.dart';
 class BluetoothStatusWidget extends ConsumerWidget {
   final VoidCallback? onTap;
 
-
   const BluetoothStatusWidget({
     super.key,
     this.onTap,

@@ -33,34 +33,9 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
   List<Map<String, dynamic>> _payments = [];
   List<Map<String, dynamic>> _terapis = []; // terapis utk tanggal laporan
   List<Map<String, dynamic>> _summaryTerapis = []; // terapis hari ini (ringkasan)
-  List<Map<String, dynamic>> _dailyProductsSold = []; // ✅ produk terjual hari ini
   Map<String, int> _txCounts = {'completed': 0, 'held': 0};
   int _modalAwal = 0;
   bool _closingReportLoaded = false;
-
-  // Controller dan focus node untuk modal awal
-  final TextEditingController _modalAwalController = TextEditingController();
-  final FocusNode _modalAwalFocusNode = FocusNode();
-
-  // Helper grouping therapist
-  List<MapEntry<String, int>> _groupTherapists(List<Map<String, dynamic>> terapis) {
-    final countMap = <String, int>{};
-    for (final t in terapis) {
-      final rawName = (t['name'] as String?)?.trim() ?? '';
-      if (rawName.isEmpty) continue;
-      final parts = rawName.contains(',')
-          ? rawName.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList()
-          : rawName.contains(' dan ')
-          ? rawName.split(' dan ').map((e) => e.trim()).where((e) => e.isNotEmpty).toList()
-          : [rawName];
-      for (final part in parts) {
-        countMap[part] = (countMap[part] ?? 0) + 1;
-      }
-    }
-    final sorted = countMap.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    return sorted;
-  }
 
   Future<void> _loadClosingReport() async {
     final supabase = ref.read(supabaseServiceProvider);
@@ -91,7 +66,6 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
 
   Future<void> _printClosingReport() async {
     if (!_closingReportLoaded) return;
-    FocusScope.of(context).unfocus();
     await _dispatchPrint(
       messageOk: 'Laporan berhasil dicetak',
       messageFail: 'Cetak laporan gagal',
@@ -106,7 +80,6 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
   }
 
   Future<void> _pickDate() async {
-    FocusScope.of(context).unfocus();
     final picked = await showDatePicker(
       context: context,
       initialDate: _closingDate,
@@ -120,7 +93,6 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
   }
 
   Future<void> _printDailySummary() async {
-    FocusScope.of(context).unfocus();
     final user = ref.read(posProvider).currentUser;
     final tanggal = _summary['tanggal'] as DateTime? ?? DateTime.now();
     final totalTransaksi = _summary['total_transaksi'] as int? ?? 0;
@@ -146,7 +118,6 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
           qris: qris,
           refund: refund,
           terapis: _summaryTerapis,
-          productsSold: _dailyProductsSold, // ✅ pakai daily products
         );
       } else if (await WindowsPrinterService().isPrinterReady) {
         success = await WindowsPrinterService().printDailySummary(
@@ -160,7 +131,6 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
           qris: qris,
           refund: refund,
           terapis: _summaryTerapis,
-          productsSold: _dailyProductsSold,
         );
       } else {
         _showNoPrinterMessage();
@@ -188,7 +158,6 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
       qris: qris,
       refund: refund,
       terapis: _summaryTerapis,
-      productsSold: _dailyProductsSold,
     );
     _showPrintMessage(success, 'Ringkasan berhasil dicetak', 'Cetak ringkasan gagal');
   }
@@ -200,7 +169,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
   }) async {
     final user = ref.read(posProvider).currentUser;
     final totalPenerimaan =
-    _payments.fold<int>(0, (s, p) => s + (p['amount'] as int? ?? 0));
+        _payments.fold<int>(0, (s, p) => s + (p['amount'] as int? ?? 0));
     final waktuBuka = DateTime(
       _closingDate.year,
       _closingDate.month,
@@ -296,14 +265,6 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
   void initState() {
     super.initState();
     _loadAll();
-    _modalAwalController.text = '0';
-  }
-
-  @override
-  void dispose() {
-    _modalAwalController.dispose();
-    _modalAwalFocusNode.dispose();
-    super.dispose();
   }
 
   Future<void> _loadAll() async {
@@ -315,12 +276,10 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
       _loadingTxns = true;
     });
 
-    final today = WibTime.now();
     final results = await Future.wait([
       supabase.fetchDailySummary(branchId: branchId),
       supabase.fetchAllTransactions(branchId: branchId),
-      supabase.getTerapisForDate(today, branchId: branchId),
-      supabase.getProductsSold(today, branchId: branchId), // ✅ daily products
+      supabase.getTerapisForDate(WibTime.now(), branchId: branchId),
     ]);
 
     if (mounted) {
@@ -328,7 +287,6 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
         _summary = results[0] as Map<String, dynamic>;
         _allTxns = results[1] as List<Map<String, dynamic>>;
         _summaryTerapis = results[2] as List<Map<String, dynamic>>;
-        _dailyProductsSold = results[3] as List<Map<String, dynamic>>;
         _loadingSummary = false;
         _loadingTxns = false;
       });
@@ -343,7 +301,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
 
     ref.listen<int>(
       posProvider.select((s) => s.transactions.length),
-          (prev, next) {
+      (prev, next) {
         if (prev != next) _loadAll();
       },
     );
@@ -361,45 +319,42 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
       );
     }
 
-    return GestureDetector(
-      onTap: () => FocusScope.of(context).unfocus(),
-      child: RefreshIndicator(
-        onRefresh: _loadAll,
-        color: AppColors.primaryGreen,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
-          children: [
-            _buildSectionHeader(
-              'Ringkasan Harian',
-              Icons.bar_chart,
-              AppColors.primaryGreen,
-              subtitle: user?.branchName,
-            ),
-            const SizedBox(height: 14),
-            if (_loadingSummary)
-              const _SkeletonCard(height: 320)
-            else
-              _buildSummarySection(),
-            const SizedBox(height: 28),
+    return RefreshIndicator(
+      onRefresh: _loadAll,
+      color: AppColors.primaryGreen,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+        children: [
+          _buildSectionHeader(
+            'Ringkasan Harian',
+            Icons.bar_chart,
+            AppColors.primaryGreen,
+            subtitle: user?.branchName,
+          ),
+          const SizedBox(height: 14),
+          if (_loadingSummary)
+            const _SkeletonCard(height: 320)
+          else
+            _buildSummarySection(),
+          const SizedBox(height: 28),
 
-            _buildSectionHeader('Laporan Tutup Kasir', Icons.receipt, AppColors.orange),
-            const SizedBox(height: 14),
-            _buildClosingReportSection(),
-            const SizedBox(height: 28),
+          _buildSectionHeader('Laporan Tutup Kasir', Icons.receipt, AppColors.orange),
+          const SizedBox(height: 14),
+          _buildClosingReportSection(),
+          const SizedBox(height: 28),
 
-            _buildSectionHeader('Backup Data', Icons.backup, Colors.orange),
-            const SizedBox(height: 14),
-            _buildBackupSection(),
-            const SizedBox(height: 28),
+          _buildSectionHeader('Backup Data', Icons.backup, Colors.orange),
+          const SizedBox(height: 14),
+          _buildBackupSection(),
+          const SizedBox(height: 28),
 
-            _buildSectionHeader('Transaksi', Icons.receipt_long, AppColors.darkBlue),
-            const SizedBox(height: 14),
-            if (_loadingTxns)
-              const _SkeletonCard(height: 240)
-            else
-              _buildTransactionList(),
-          ],
-        ),
+          _buildSectionHeader('Transaksi', Icons.receipt_long, AppColors.darkBlue),
+          const SizedBox(height: 14),
+          if (_loadingTxns)
+            const _SkeletonCard(height: 240)
+          else
+            _buildTransactionList(),
+        ],
       ),
     );
   }
@@ -522,6 +477,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
   Widget _buildClosingReportSection() {
     return Column(
       children: [
+        // Controls card
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -539,6 +495,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Date + Modal Awal row
               Row(
                 children: [
                   Expanded(
@@ -556,50 +513,51 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
                 ],
               ),
               const SizedBox(height: 12),
+              // Load / Print button
               SizedBox(
                 width: double.infinity,
                 child: _loadingClosingReport
                     ? ElevatedButton.icon(
-                  onPressed: null,
-                  icon: const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                  ),
-                  label: const Text('Memuat data...', style: TextStyle(fontSize: 13)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.grey.shade400,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    elevation: 0,
-                  ),
-                )
+                        onPressed: null,
+                        icon: const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        ),
+                        label: const Text('Memuat data...', style: TextStyle(fontSize: 13)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.grey.shade400,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          elevation: 0,
+                        ),
+                      )
                     : _closingReportLoaded
-                    ? ElevatedButton.icon(
-                  onPressed: _printClosingReport,
-                  icon: const Icon(Icons.print, size: 16),
-                  label: const Text('Print Laporan', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primaryGreen,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    elevation: 0,
-                  ),
-                )
-                    : ElevatedButton.icon(
-                  onPressed: _loadClosingReport,
-                  icon: const Icon(Icons.cloud_download, size: 16),
-                  label: const Text('Muat Data Laporan', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.orange,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    elevation: 0,
-                  ),
-                ),
+                        ? ElevatedButton.icon(
+                            onPressed: _printClosingReport,
+                            icon: const Icon(Icons.print, size: 16),
+                            label: const Text('Print Laporan', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primaryGreen,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              elevation: 0,
+                            ),
+                          )
+                        : ElevatedButton.icon(
+                            onPressed: _loadClosingReport,
+                            icon: const Icon(Icons.cloud_download, size: 16),
+                            label: const Text('Muat Data Laporan', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.orange,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              elevation: 0,
+                            ),
+                          ),
               ),
             ],
           ),
@@ -607,6 +565,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
 
         if (_closingReportLoaded) ...[
           const SizedBox(height: 12),
+          // Summary stats card
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -660,25 +619,11 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
                 ),
                 if (_terapis.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryGreen.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.healing, size: 16, color: AppColors.primaryGreen),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Terapis: ${_groupTherapists(_terapis).map((e) => '${e.key} ${e.value}x').join(', ')}',
-                            style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
+                  Text(
+                    'Terapis: '
+                    '${_terapis.map((t) => t['name']).join(', ')}',
+                    style:
+                        TextStyle(fontSize: 12, color: Colors.grey.shade700),
                   ),
                 ],
               ],
@@ -746,10 +691,9 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
     );
   }
 
-  // Field modal awal yang lebih besar dan jelas
   Widget _buildModalAwalField() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       decoration: BoxDecoration(
         color: Colors.grey.shade50,
         borderRadius: BorderRadius.circular(12),
@@ -757,7 +701,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
       ),
       child: Row(
         children: [
-          Icon(Icons.account_balance_wallet, size: 18, color: Colors.grey.shade700),
+          Icon(Icons.account_balance_wallet, size: 16, color: Colors.grey.shade600),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
@@ -765,30 +709,29 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
               children: [
                 Text(
                   'Modal Awal',
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
+                  style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
                 ),
-                const SizedBox(height: 2),
-                TextField(
-                  controller: _modalAwalController,
-                  focusNode: _modalAwalFocusNode,
-                  onChanged: (v) {
-                    final parsed = int.tryParse(v.replaceAll('.', ''));
-                    if (parsed != null) _modalAwal = parsed;
-                  },
-                  keyboardType: TextInputType.number,
-                  inputFormatters: const [ThousandsInputFormatter()],
-                  autofocus: false, // ✅ Tidak otomatis fokus
-                  decoration: const InputDecoration(
-                    hintText: '0',
-                    hintStyle: TextStyle(fontSize: 14, color: Colors.grey),
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(vertical: 4),
-                    isDense: true,
-                  ),
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.darkBlue,
+                SizedBox(
+                  height: 24,
+                  child: TextField(
+                    onChanged: (v) {
+                      final parsed = int.tryParse(v.replaceAll('.', ''));
+                      if (parsed != null) _modalAwal = parsed;
+                    },
+                    keyboardType: TextInputType.number,
+                    inputFormatters: const [ThousandsInputFormatter()],
+                    decoration: const InputDecoration(
+                      hintText: '0',
+                      hintStyle: TextStyle(fontSize: 12, color: Colors.grey),
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(vertical: 2),
+                      isDense: true,
+                    ),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.darkBlue,
+                    ),
                   ),
                 ),
               ],
@@ -1186,7 +1129,8 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.healing, size: 18, color: AppColors.darkBlue),
+                const Icon(Icons.healing,
+                    size: 18, color: AppColors.darkBlue),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -1204,12 +1148,16 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
                       Wrap(
                         spacing: 8,
                         runSpacing: 4,
-                        children: _groupTherapists(_summaryTerapis).map((e) {
-                          return Text(
-                            '• ${e.key} ${e.value}x',
-                            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                          );
-                        }).toList(),
+                        children: [
+                          for (final t in _summaryTerapis)
+                            Text(
+                              '• ${t['name']}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade700,
+                              ),
+                            ),
+                        ],
                       ),
                     ],
                   ),
@@ -1527,6 +1475,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Handle bar
               Center(
                 child: Container(
                   width: 40,

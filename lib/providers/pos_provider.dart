@@ -474,12 +474,6 @@ class PosProvider extends StateNotifier<PosState> {
 
   Future<bool> printTransaction(Transaction transaction) async {
     debugPrint('[DHBH Provider] printTransaction: id=${transaction.id}, orderNo=${transaction.orderNo}');
-    debugPrint('[Printer] ============ PRINT TRANSACTION ============');
-    debugPrint('[Printer] Branch: ${transaction.branchName}');
-    debugPrint('[Printer] Cashier: ${transaction.cashierName}');
-    debugPrint('[Printer] Customer: ${transaction.customerNames}');
-    debugPrint('[Printer] Terapis: ${transaction.terapisNames}');
-    debugPrint('[Printer] ===========================================');
     bool printSuccess = false;
     try {
       // Windows desktop: prefer a connected Bluetooth thermal printer; fall

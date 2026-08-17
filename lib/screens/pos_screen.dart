@@ -14,9 +14,9 @@ import '../widgets/product_card.dart';
 import '../widgets/skeleton_widget.dart';
 
 /// Breakpoint untuk layout
-/// - Desktop : ≥1400px (laptop 1080p ke atas, sidebar + wide cart)
-/// - Tablet  : ≥800px  (Android tablet 1280x800, 2 panel tanpa sidebar)
-/// - Phone   : <800px  (single column, bottom sheet cart)
+/// - Desktop : ≥1200px (laptop 1080p ke atas, sidebar + wide cart)
+/// - Tablet  : ≥900px  (laptop 768p–900px, 2 panel tanpa sidebar)
+/// - Phone   : <900px  (single column, bottom sheet cart)
 class POSScreen extends ConsumerStatefulWidget {
   const POSScreen({super.key});
 
@@ -29,17 +29,6 @@ class _POSScreenState extends ConsumerState<POSScreen> {
   final _searchFocusNode = FocusNode();
 
   @override
-  void initState() {
-    super.initState();
-    // Pastikan tidak ada fokus otomatis saat layar pertama kali dibangun
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        FocusScope.of(context).unfocus();
-      }
-    });
-  }
-
-  @override
   void dispose() {
     _searchController.dispose();
     _searchFocusNode.dispose();
@@ -50,25 +39,30 @@ class _POSScreenState extends ConsumerState<POSScreen> {
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
     // Optimized breakpoints for Android tablet 1280x800
-    final isDesktop = width >= 1400;
-    final isTablet = width >= 800 && width < 1400; // Tablet: 800-1399px
+    final isDesktop = width >= 1200;
+    final isTablet = width >= 800 && width < 1200;  // Tablet: 800-1199px (covers 1280x800 landscape)
     final posState = ref.watch(posProvider);
     final notifier = ref.read(posProvider.notifier);
 
-    // Tidak ada auto-focus; keyboard hanya muncul jika pengguna mengetuk field
+    // Auto-focus search saat desktop untuk workflow cepat
+    if (isDesktop && !_searchFocusNode.hasFocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _searchFocusNode.requestFocus();
+      });
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
       body: isDesktop
           ? _buildDesktopLayout(posState, notifier)
           : isTablet
-          ? _buildTabletLayout(posState, notifier)
-          : _buildPhoneLayout(posState, notifier),
+              ? _buildTabletLayout(posState, notifier)
+              : _buildPhoneLayout(posState, notifier),
     );
   }
 
   // ═══════════════════════════════════════════════════════════
-  // DESKTOP LAYOUT (≥1400px) — Laptop 1080p & atas
+  // DESKTOP LAYOUT (≥1200px) — Laptop 1080p & atas
   // ═══════════════════════════════════════════════════════════
   Widget _buildDesktopLayout(PosState posState, PosProvider notifier) {
     final products = notifier.filteredProducts(false);
@@ -76,6 +70,7 @@ class _POSScreenState extends ConsumerState<POSScreen> {
 
     return Row(
       children: [
+        // ── Main Content (no sidebar) ──
         Expanded(
           flex: 5,
           child: Column(
@@ -90,27 +85,25 @@ class _POSScreenState extends ConsumerState<POSScreen> {
               Expanded(
                 child: posState.isLoading
                     ? const SkeletonProductGrid(
-                  crossAxisCount: 4,
-                  itemCount: 12,
-                )
+                        crossAxisCount: 4,
+                        itemCount: 12,
+                      )
                     : _buildProductGrid(
-                  products,
-                  crossAxisCount: _calculateGridColumns(context),
-                ),
+                        products,
+                        crossAxisCount: _calculateGridColumns(context),
+                      ),
               ),
             ],
           ),
         ),
-        SizedBox(
-          width: 520,
-          child: _buildCartPanel(posState, notifier),
-        ),
+        // ── Cart Panel ──
+        _buildCartPanel(posState, notifier, isDesktop: true),
       ],
     );
   }
 
   // ═══════════════════════════════════════════════════════════
-  // TABLET LAYOUT (800–1399px) — Android tablet 1280x800
+  // TABLET LAYOUT (800–1199px) — Android tablet 1280x800
   // ═══════════════════════════════════════════════════════════
   Widget _buildTabletLayout(PosState posState, PosProvider notifier) {
     final products = notifier.filteredProducts(false);
@@ -121,6 +114,7 @@ class _POSScreenState extends ConsumerState<POSScreen> {
       color: AppColors.primaryGreen,
       child: Row(
         children: [
+          // Product area - optimized for 1280x800 tablet
           Expanded(
             flex: 3,
             child: Column(
@@ -139,28 +133,23 @@ class _POSScreenState extends ConsumerState<POSScreen> {
                 Expanded(
                   child: posState.isLoading
                       ? const SkeletonProductGrid(
-                    crossAxisCount: 3,
-                    itemCount: 9,
-                  )
-                      : _buildProductGrid(
-                    products,
-                    crossAxisCount: _calculateGridColumns(context),
-                  ),
+                          crossAxisCount: 3,
+                          itemCount: 9,
+                        )
+                      : _buildProductGrid(products, crossAxisCount: 3),
                 ),
               ],
             ),
           ),
-          Expanded(
-            flex: 2,
-            child: _buildCartPanel(posState, notifier),
-          ),
+          // Cart panel — optimized for tablet width
+          _buildCartPanel(posState, notifier, isDesktop: false),
         ],
       ),
     );
   }
 
   // ═══════════════════════════════════════════════════════════
-  // PHONE LAYOUT (<800px)
+  // PHONE LAYOUT (<900px)
   // ═══════════════════════════════════════════════════════════
   Widget _buildPhoneLayout(PosState posState, PosProvider notifier) {
     final currencyFormat = NumberFormat.decimalPattern('id');
@@ -210,11 +199,13 @@ class _POSScreenState extends ConsumerState<POSScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          // Search — lebih lebar & jelas (held-pill ditampilkan di header)
           Expanded(
             flex: 5,
             child: _buildSearchBar(isDense: false, showHeldPill: false),
           ),
           const SizedBox(width: 16),
+          // Info & Actions — wrap to avoid overflow on narrow widths
           Flexible(
             child: Wrap(
               alignment: WrapAlignment.end,
@@ -222,12 +213,14 @@ class _POSScreenState extends ConsumerState<POSScreen> {
               spacing: 12,
               runSpacing: 8,
               children: [
+                // Shortcut hint
+                
+                // Held orders pill
                 if (heldCount > 0)
                   GestureDetector(
                     onTap: () => _showHeldOrders(context),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                       decoration: BoxDecoration(
                         color: AppColors.orange,
                         borderRadius: BorderRadius.circular(100),
@@ -235,8 +228,7 @@ class _POSScreenState extends ConsumerState<POSScreen> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.pause_circle,
-                              color: Colors.white, size: 18),
+                          const Icon(Icons.pause_circle, color: Colors.white, size: 18),
                           const SizedBox(width: 6),
                           Text(
                             '$heldCount Ditahan',
@@ -250,6 +242,7 @@ class _POSScreenState extends ConsumerState<POSScreen> {
                       ),
                     ),
                   ),
+                
               ],
             ),
           ),
@@ -268,7 +261,7 @@ class _POSScreenState extends ConsumerState<POSScreen> {
     return Shortcuts(
       shortcuts: {
         LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyK):
-        const _SearchIntent(),
+            const _SearchIntent(),
       },
       child: Actions(
         actions: {
@@ -300,8 +293,7 @@ class _POSScreenState extends ConsumerState<POSScreen> {
                 child: TextField(
                   controller: _searchController,
                   focusNode: _searchFocusNode,
-                  onChanged: (v) =>
-                      ref.read(posProvider.notifier).setSearchQuery(v),
+                  onChanged: (v) => ref.read(posProvider.notifier).setSearchQuery(v),
                   style: TextStyle(fontSize: isDense ? 14 : 15),
                   decoration: InputDecoration(
                     icon: Icon(
@@ -324,6 +316,7 @@ class _POSScreenState extends ConsumerState<POSScreen> {
               ),
             ),
             const SizedBox(width: 10),
+            // Refresh
             _IconButton(
               icon: Icons.refresh,
               onTap: () {
@@ -332,48 +325,13 @@ class _POSScreenState extends ConsumerState<POSScreen> {
               },
               size: isDense ? 40 : 48,
             ),
-            if (showHeldPill && heldCount > 0) ...[
+            // Held orders (tablet only; desktop menampilkannya di header)
+            if (showHeldPill && !isDense && heldCount > 0) ...[
               const SizedBox(width: 10),
               GestureDetector(
                 onTap: () => _showHeldOrders(context),
-                child: isDense
-                    ? Container(
-                  height: 40,
-                  width: 40,
-                  decoration: BoxDecoration(
-                    color: AppColors.orange,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      const Icon(Icons.pause_circle,
-                          color: Colors.white, size: 20),
-                      Positioned(
-                        right: 1,
-                        top: 1,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 4, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            '$heldCount',
-                            style: const TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.orange,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-                    : Container(
-                  height: 48,
+                child: Container(
+                  height: isDense ? 40 : 48,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   decoration: BoxDecoration(
                     color: AppColors.orange,
@@ -382,11 +340,10 @@ class _POSScreenState extends ConsumerState<POSScreen> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.pause_circle,
-                          color: Colors.white, size: 20),
+                      const Icon(Icons.pause_circle, color: Colors.white, size: 20),
                       const SizedBox(width: 8),
                       Text(
-                        '$heldCount Ditahan',
+                        '$heldCount',
                         style: const TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.bold,
@@ -408,25 +365,24 @@ class _POSScreenState extends ConsumerState<POSScreen> {
   // CATEGORY CHIPS
   // ═══════════════════════════════════════════════════════════
   Widget _buildCategoryChips(
-      PosState posState,
-      List<String> categories, {
-        required bool isDense,
-      }) {
+    PosState posState,
+    List<String> categories, {
+    required bool isDense,
+  }) {
     return SizedBox(
       height: isDense ? 38 : 44,
       child: ListView(
         scrollDirection: Axis.horizontal,
         children: [
-          _buildChip('Semua', posState.selectedCategory.isEmpty,
-              isDense: isDense),
+          _buildChip('Semua', posState.selectedCategory.isEmpty, isDense: isDense),
           ...categories.map((cat) => Padding(
-            padding: const EdgeInsets.only(left: 10),
-            child: _buildChip(
-              cat,
-              posState.selectedCategory == cat,
-              isDense: isDense,
-            ),
-          )),
+                padding: const EdgeInsets.only(left: 10),
+                child: _buildChip(
+                  cat,
+                  posState.selectedCategory == cat,
+                  isDense: isDense,
+                ),
+              )),
         ],
       ),
     );
@@ -449,22 +405,24 @@ class _POSScreenState extends ConsumerState<POSScreen> {
         decoration: BoxDecoration(
           color: isActive ? AppColors.primaryGreen : Colors.white,
           borderRadius: BorderRadius.circular(100),
-          border: isActive ? null : Border.all(color: Colors.grey.shade200),
+          border: isActive
+              ? null
+              : Border.all(color: Colors.grey.shade200),
           boxShadow: isActive
               ? [
-            BoxShadow(
-              color: AppColors.primaryGreen.withValues(alpha: 0.3),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ]
+                  BoxShadow(
+                    color: AppColors.primaryGreen.withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
               : [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
         ),
         child: Text(
           label,
@@ -479,7 +437,7 @@ class _POSScreenState extends ConsumerState<POSScreen> {
   }
 
   // ═══════════════════════════════════════════════════════════
-  // PRODUCT GRID
+  // PRODUCT GRID — Density menyesuaikan layar
   // ═══════════════════════════════════════════════════════════
   int _calculateGridColumns(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
@@ -490,15 +448,13 @@ class _POSScreenState extends ConsumerState<POSScreen> {
     return 2;
   }
 
-  Widget _buildProductGrid(List<Product> products,
-      {required int crossAxisCount}) {
+  Widget _buildProductGrid(List<Product> products, {required int crossAxisCount}) {
     if (products.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.inventory_2_outlined,
-                size: 64, color: Colors.grey.shade300),
+            Icon(Icons.inventory_2_outlined, size: 64, color: Colors.grey.shade300),
             const SizedBox(height: 16),
             Text(
               'Tidak ada produk',
@@ -527,6 +483,7 @@ class _POSScreenState extends ConsumerState<POSScreen> {
         crossAxisCount: crossAxisCount,
         crossAxisSpacing: 16,
         mainAxisSpacing: 16,
+        // Desktop: card lebih landai karena info lebih banyak
         childAspectRatio: crossAxisCount >= 4 ? 1.8 : 1.6,
       ),
       itemCount: products.length,
@@ -537,9 +494,7 @@ class _POSScreenState extends ConsumerState<POSScreen> {
           branchId: branchId,
           onTap: (isHomeVisit) {
             FocusScope.of(context).unfocus();
-            ref
-                .read(posProvider.notifier)
-                .addToCart(products[index], isHomeVisit: isHomeVisit);
+            ref.read(posProvider.notifier).addToCart(products[index], isHomeVisit: isHomeVisit);
           },
         );
       },
@@ -549,16 +504,22 @@ class _POSScreenState extends ConsumerState<POSScreen> {
   // ═══════════════════════════════════════════════════════════
   // CART PANEL — Desktop & Tablet
   // ═══════════════════════════════════════════════════════════
-  Widget _buildCartPanel(PosState posState, PosProvider notifier) {
+  Widget _buildCartPanel(PosState posState, PosProvider notifier, {required bool isDesktop}) {
     final cartItems = posState.cartItems;
     final total = notifier.cartTotal;
     final itemCount = notifier.cartItemCount;
     final currencyFormat = NumberFormat.decimalPattern('id');
 
+    // Desktop: cart lebih lebar (480px) agar item tampil lega & besar.
+    // Tablet: 400px tetap nyaman.
+    final cartWidth = isDesktop ? 480.0 : 400.0;
+
     return Container(
+      width: cartWidth,
       color: Colors.white,
       child: Column(
         children: [
+          // Header
           Container(
             padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
             decoration: BoxDecoration(
@@ -580,8 +541,7 @@ class _POSScreenState extends ConsumerState<POSScreen> {
                     color: AppColors.orange.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(Icons.shopping_cart,
-                      color: AppColors.orange, size: 22),
+                  child: const Icon(Icons.shopping_cart, color: AppColors.orange, size: 22),
                 ),
                 const SizedBox(width: 12),
                 const Text(
@@ -595,8 +555,7 @@ class _POSScreenState extends ConsumerState<POSScreen> {
                 const Spacer(),
                 if (cartItems.isNotEmpty)
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 5),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                     decoration: BoxDecoration(
                       color: Colors.grey.shade100,
                       borderRadius: BorderRadius.circular(20),
@@ -614,46 +573,46 @@ class _POSScreenState extends ConsumerState<POSScreen> {
             ),
           ),
           const Divider(height: 1, color: AppColors.grayDivider),
+          // List
           Expanded(
             child: cartItems.isEmpty
                 ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.shopping_cart_outlined,
-                    size: 52,
-                    color: Colors.grey.shade300,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Pilih menu untuk\nmemulai transaksi',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.black.withValues(alpha: 0.40),
-                      fontSize: 15,
-                      height: 1.5,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.shopping_cart_outlined,
+                          size: 52,
+                          color: Colors.grey.shade300,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Pilih menu untuk\nmemulai transaksi',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.black.withValues(alpha: 0.40),
+                            fontSize: 15,
+                            height: 1.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                    itemCount: cartItems.length,
+                    itemBuilder: (context, index) => CartItemCard(
+                      item: cartItems[index],
+                      index: index,
+                      onRemove: () => notifier.removeFromCart(index),
+                      onQuantityChanged: (qty) => notifier.updateCartItemQuantity(index, qty),
                     ),
                   ),
-                ],
-              ),
-            )
-                : ListView.builder(
-              padding: const EdgeInsets.symmetric(
-                  vertical: 8, horizontal: 8),
-              itemCount: cartItems.length,
-              itemBuilder: (context, index) => CartItemCard(
-                item: cartItems[index],
-                index: index,
-                onRemove: () => notifier.removeFromCart(index),
-                onQuantityChanged: (qty) =>
-                    notifier.updateCartItemQuantity(index, qty),
-              ),
-            ),
           ),
           const Divider(height: 1, color: AppColors.grayDivider),
+          // Checkout bar
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: Colors.white,
               boxShadow: [
@@ -667,13 +626,14 @@ class _POSScreenState extends ConsumerState<POSScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Summary row
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
                       '$itemCount items',
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: 15,
                         color: Colors.grey.shade700,
                         fontWeight: FontWeight.w600,
                       ),
@@ -684,7 +644,7 @@ class _POSScreenState extends ConsumerState<POSScreen> {
                         child: Text(
                           'Rp ${currencyFormat.format(total)}',
                           style: const TextStyle(
-                            fontSize: 20,
+                            fontSize: 22,
                             fontWeight: FontWeight.bold,
                             color: AppColors.darkBlue,
                           ),
@@ -693,51 +653,53 @@ class _POSScreenState extends ConsumerState<POSScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 14),
+                // Action buttons
                 Row(
                   children: [
+                    // Hold button
                     Expanded(
                       flex: 1,
                       child: ElevatedButton.icon(
                         onPressed: total > 0 ? () => _holdOrder(context) : null,
-                        icon: const Icon(Icons.pause, size: 16),
+                        icon: const Icon(Icons.pause, size: 18),
                         label: const Text(
                           'Hold',
-                          style: TextStyle(
-                              fontSize: 14, fontWeight: FontWeight.w700),
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
                         ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.orange,
                           foregroundColor: Colors.white,
-                          minimumSize: const Size(0, 42),
+                          minimumSize: const Size(0, 50),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 12),
+                    // Pay button
                     Expanded(
                       flex: 2,
                       child: ElevatedButton.icon(
-                        onPressed: total > 0
-                            ? () => _showPaymentDialog(context)
-                            : null,
-                        icon: const Icon(Icons.payment, size: 18),
-                        label: const Text(
+                        onPressed: total > 0 ? () => _showPaymentDialog(context) : null,
+                        icon: const Icon(Icons.payment, size: 20),
+                        label: Text(
                           'Bayar  •  F9',
                           style: TextStyle(
-                              fontSize: 14, fontWeight: FontWeight.bold),
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primaryGreen,
                           foregroundColor: Colors.white,
-                          minimumSize: const Size(0, 42),
+                          minimumSize: const Size(0, 50),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
                         ),
                       ),
                     ),
@@ -755,16 +717,16 @@ class _POSScreenState extends ConsumerState<POSScreen> {
   // CART FOOTER (Phone)
   // ═══════════════════════════════════════════════════════════
   Widget _buildCartFooter(
-      PosState posState,
-      PosProvider notifier,
-      NumberFormat currencyFormat,
-      ) {
+    PosState posState,
+    PosProvider notifier,
+    NumberFormat currencyFormat,
+  ) {
     final total = notifier.cartTotal;
     final itemCount = notifier.cartItemCount;
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
     return Container(
-      padding: EdgeInsets.fromLTRB(16, 8, 16, 8 + bottomInset),
+      padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + bottomInset),
       decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: [
@@ -786,7 +748,7 @@ class _POSScreenState extends ConsumerState<POSScreen> {
                   Text(
                     '$itemCount items',
                     style: const TextStyle(
-                      fontSize: 12,
+                      fontSize: 13,
                       color: AppColors.darkBlue,
                       fontWeight: FontWeight.w700,
                     ),
@@ -795,7 +757,7 @@ class _POSScreenState extends ConsumerState<POSScreen> {
                   Text(
                     'Rp ${currencyFormat.format(total)}',
                     style: const TextStyle(
-                      fontSize: 16,
+                      fontSize: 17,
                       color: AppColors.primaryGreen,
                       fontWeight: FontWeight.bold,
                     ),
@@ -806,30 +768,23 @@ class _POSScreenState extends ConsumerState<POSScreen> {
             if (total > 0)
               IconButton(
                 onPressed: () => _holdOrder(context),
-                icon: const Icon(Icons.pause_circle,
-                    color: AppColors.orange, size: 26),
+                icon: const Icon(Icons.pause_circle, color: AppColors.orange, size: 28),
                 tooltip: 'Hold Order',
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
               ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 10),
             ElevatedButton.icon(
               onPressed: total > 0 ? () => _showPaymentDialog(context) : null,
-              icon: const Icon(Icons.shopping_cart_checkout,
-                  color: Colors.white, size: 16),
+              icon: const Icon(Icons.shopping_cart_checkout, color: Colors.white, size: 18),
               label: const Text(
                 'Bayar',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700),
+                style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700),
               ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primaryGreen,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-                padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               ),
             ),
           ],
@@ -839,10 +794,9 @@ class _POSScreenState extends ConsumerState<POSScreen> {
   }
 
   // ═══════════════════════════════════════════════════════════
-  // DIALOGS
+  // DIALOGS (sama seperti sebelumnya, styling ditingkatkan)
   // ═══════════════════════════════════════════════════════════
   Future<void> _showPaymentDialog(BuildContext context) async {
-    FocusScope.of(context).unfocus(); // Pastikan keyboard tidak muncul otomatis
     final posState = ref.read(posProvider);
     final notifier = ref.read(posProvider.notifier);
     final result = await showDialog<Map<String, dynamic>>(
@@ -873,19 +827,15 @@ class _POSScreenState extends ConsumerState<POSScreen> {
         ),
       );
     }
-    if (mounted) FocusScope.of(context).unfocus(); // Bersihkan fokus setelah dialog
   }
 
-  Future<void> _holdOrder(BuildContext context) async {
-    FocusScope.of(context).unfocus(); // Hindari keyboard muncul otomatis
+  void _holdOrder(BuildContext context) {
     final customerControllers = <TextEditingController>[TextEditingController()];
     final formKey = GlobalKey<FormState>();
-
-    final names = await showDialog<List<String>>(
+    showDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
+      builder: (ctx) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Row(
             children: [
@@ -913,7 +863,7 @@ class _POSScreenState extends ConsumerState<POSScreen> {
                         Expanded(
                           child: TextFormField(
                             controller: customerControllers[i],
-                            autofocus: false, // Tidak pernah autofocus
+                            autofocus: i == 0,
                             decoration: InputDecoration(
                               labelText: i == 0
                                   ? 'Nama Pelanggan'
@@ -924,24 +874,15 @@ class _POSScreenState extends ConsumerState<POSScreen> {
                               isDense: true,
                               suffixIcon: TextButton.icon(
                                 onPressed: () async {
-                                  final customer = await showModalBottomSheet<Customer>(
-                                    context: context,
-                                    isScrollControlled: true,
-                                    backgroundColor: Colors.transparent,
-                                    builder: (_) => Container(
-                                      height: MediaQuery.of(context).size.height * 0.75,
-                                      decoration: const BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius: BorderRadius.vertical(
-                                            top: Radius.circular(20)),
-                                      ),
-                                      child: const CustomerScreen(isPicker: true),
+                                  final customer = await Navigator.push<Customer>(
+                                    ctx,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          const CustomerScreen(isPicker: true),
                                     ),
                                   );
                                   if (customer != null) {
-                                    setDialogState(() {
-                                      customerControllers[i].text = customer.name;
-                                    });
+                                    customerControllers[i].text = customer.name;
                                   }
                                 },
                                 icon: const Icon(Icons.person_search, size: 18),
@@ -949,7 +890,7 @@ class _POSScreenState extends ConsumerState<POSScreen> {
                                     style: TextStyle(fontSize: 13)),
                                 style: TextButton.styleFrom(
                                   padding:
-                                  const EdgeInsets.symmetric(horizontal: 12),
+                                      const EdgeInsets.symmetric(horizontal: 12),
                                 ),
                               ),
                             ),
@@ -965,8 +906,10 @@ class _POSScreenState extends ConsumerState<POSScreen> {
                               onPressed: () => setDialogState(() {
                                 customerControllers.removeAt(i).dispose();
                               }),
-                              icon: const Icon(Icons.remove_circle_outline,
-                                  size: 20, color: Colors.redAccent),
+                              icon: const Icon(
+                                  Icons.remove_circle_outline,
+                                  size: 20,
+                                  color: Colors.redAccent),
                               visualDensity: VisualDensity.compact,
                             ),
                           ),
@@ -993,7 +936,10 @@ class _POSScreenState extends ConsumerState<POSScreen> {
           actions: [
             TextButton(
               onPressed: () {
-                Navigator.pop(dialogContext); // Batal, kembalikan null
+                for (final c in customerControllers) {
+                  c.dispose();
+                }
+                Navigator.pop(ctx);
               },
               child: const Text('Batal'),
             ),
@@ -1004,7 +950,20 @@ class _POSScreenState extends ConsumerState<POSScreen> {
                     .map((c) => c.text.trim())
                     .where((s) => s.isNotEmpty)
                     .toList();
-                Navigator.pop(dialogContext, names); // Kembalikan daftar nama
+                ref.read(posProvider.notifier).holdCurrentOrder(
+                      customerNames: names,
+                    );
+                for (final c in customerControllers) {
+                  c.dispose();
+                }
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Pesanan ditahan'),
+                    behavior: SnackBarBehavior.floating,
+                    margin: EdgeInsets.all(16),
+                  ),
+                );
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.orange,
@@ -1017,6 +976,7 @@ class _POSScreenState extends ConsumerState<POSScreen> {
         ),
       ),
     );
+<<<<<<< HEAD
 
     // Dispose controllers setelah dialog benar-benar ditutup
     for (final c in customerControllers) {
@@ -1036,10 +996,11 @@ class _POSScreenState extends ConsumerState<POSScreen> {
         );
       }
     }
+=======
+>>>>>>> parent of 3850dfe (NewUpdate)
   }
 
   void _showHeldOrders(BuildContext context) {
-    FocusScope.of(context).unfocus(); // Hindari keyboard muncul otomatis
     final posState = ref.read(posProvider);
     final heldOrders = posState.heldOrders;
     final currencyFormat = NumberFormat.decimalPattern('id');
@@ -1060,6 +1021,7 @@ class _POSScreenState extends ConsumerState<POSScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Handle
               Center(
                 child: Container(
                   width: 40,
@@ -1083,8 +1045,7 @@ class _POSScreenState extends ConsumerState<POSScreen> {
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: Colors.grey.shade100,
                       borderRadius: BorderRadius.circular(20),
@@ -1100,95 +1061,90 @@ class _POSScreenState extends ConsumerState<POSScreen> {
               Expanded(
                 child: heldOrders.isEmpty
                     ? Center(
-                  child: Text(
-                    'Tidak ada pesanan ditahan',
-                    style:
-                    TextStyle(color: Colors.grey[500], fontSize: 15),
-                  ),
-                )
+                        child: Text(
+                          'Tidak ada pesanan ditahan',
+                          style: TextStyle(color: Colors.grey[500], fontSize: 15),
+                        ),
+                      )
                     : ListView.builder(
-                  controller: scrollController,
-                  itemCount: heldOrders.length,
-                  itemBuilder: (context, index) {
-                    final order = heldOrders[index];
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(color: Colors.grey.shade200),
-                      ),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 8),
-                        leading: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color:
-                            AppColors.orange.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: const Icon(
-                            Icons.pause_circle,
-                            color: AppColors.orange,
-                            size: 22,
-                          ),
-                        ),
-                        title: Text(
-                          order.customerName ?? "Tanpa nama",
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 15,
-                          ),
-                        ),
-                        subtitle: Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(
-                            '${order.totalItems} items  •  Rp ${currencyFormat.format(order.totalAmount)}',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey.shade600,
+                        controller: scrollController,
+                        itemCount: heldOrders.length,
+                        itemBuilder: (context, index) {
+                          final order = heldOrders[index];
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: BorderSide(color: Colors.grey.shade200),
                             ),
-                          ),
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _IconButton(
-                              icon: Icons.shopping_cart,
-                              color: AppColors.primaryGreen,
-                              onTap: () {
-                                ref
-                                    .read(posProvider.notifier)
-                                    .retrieveHeldOrder(index);
-                                Navigator.pop(ctx);
-                                FocusScope.of(context).unfocus(); // Bersihkan
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Pesanan diambil'),
-                                    behavior: SnackBarBehavior.floating,
-                                    margin: EdgeInsets.all(16),
+                            child: ListTile(
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                              leading: Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: AppColors.orange.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(
+                                  Icons.pause_circle,
+                                  color: AppColors.orange,
+                                  size: 22,
+                                ),
+                              ),
+                              title: Text(
+                                order.customerName ?? "Tanpa nama",
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 15,
+                                ),
+                              ),
+                              subtitle: Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(
+                                  '${order.totalItems} items  •  Rp ${currencyFormat.format(order.totalAmount)}',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey.shade600,
                                   ),
-                                );
-                              },
-                              size: 40,
+                                ),
+                              ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _IconButton(
+                                    icon: Icons.shopping_cart,
+                                    color: AppColors.primaryGreen,
+                                    onTap: () {
+                                      ref.read(posProvider.notifier).retrieveHeldOrder(index);
+                                      Navigator.pop(ctx);
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Pesanan diambil'),
+                                          behavior: SnackBarBehavior.floating,
+                                          margin: EdgeInsets.all(16),
+                                        ),
+                                      );
+                                    },
+                                    size: 40,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _IconButton(
+                                    icon: Icons.delete_outline,
+                                    color: Colors.red,
+                                    onTap: () => ref.read(posProvider.notifier).deleteHeldOrder(index),
+                                    size: 40,
+                                  ),
+                                ],
+                              ),
                             ),
-                            const SizedBox(width: 8),
-                            _IconButton(
-                              icon: Icons.delete_outline,
-                              color: Colors.red,
-                              onTap: () => ref
-                                  .read(posProvider.notifier)
-                                  .deleteHeldOrder(index),
-                              size: 40,
-                            ),
-                          ],
-                        ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
               ),
             ],
           ),
@@ -1252,7 +1208,7 @@ class _SearchIntent extends Intent {
 }
 
 // ═══════════════════════════════════════════════════════════
-// PRODUCT CARD WRAPPER
+// PRODUCT CARD WRAPPER (sama, styling ditingkatkan via ProductCard)
 // ═══════════════════════════════════════════════════════════
 class _ProductCardWithPrice extends StatelessWidget {
   final Product product;
@@ -1279,10 +1235,10 @@ class _ProductCardWithPrice extends StatelessWidget {
   }
 
   void _showPriceOptions(BuildContext context) {
-    FocusScope.of(context).unfocus(); // Hindari keyboard muncul otomatis
     final screenWidth = MediaQuery.of(context).size.width;
     showModalBottomSheet(
       context: context,
+      // Popup lebih lebar di layar lebar (desktop/tablet) — max 520px.
       constraints: BoxConstraints(
         maxWidth: screenWidth > 800 ? 820 : double.infinity,
       ),
@@ -1317,10 +1273,7 @@ class _ProductCardWithPrice extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               'Pilih jenis layanan:',
-              style: TextStyle(
-                  fontSize: 15,
-                  color: Colors.grey.shade700,
-                  fontWeight: FontWeight.w600),
+              style: TextStyle(fontSize: 15, color: Colors.grey.shade700, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 20),
             SizedBox(
