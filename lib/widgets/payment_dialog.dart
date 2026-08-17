@@ -165,6 +165,7 @@ class _PaymentDialogState extends ConsumerState<PaymentDialog> {
                     const Text('Pembayaran', style: AppTypography.headingBold),
                     GestureDetector(
                       onTap: () {
+                        FocusScope.of(context).unfocus();
                         widget.onDismiss?.call();
                         Navigator.pop(context);
                       },
@@ -333,7 +334,10 @@ class _PaymentDialogState extends ConsumerState<PaymentDialog> {
                         Padding(
                           padding: const EdgeInsets.only(top: 22, left: 4),
                           child: InkWell(
-                            onTap: () => _removeCustomerField(i),
+                            onTap: () {
+                              FocusScope.of(context).unfocus();
+                              _removeCustomerField(i);
+                            },
                             child: const Padding(
                               padding: EdgeInsets.all(6),
                               child: Icon(

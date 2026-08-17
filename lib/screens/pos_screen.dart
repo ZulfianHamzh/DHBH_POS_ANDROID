@@ -390,9 +390,12 @@ class _POSScreenState extends ConsumerState<POSScreen> {
 
   Widget _buildChip(String label, bool isActive, {required bool isDense}) {
     return GestureDetector(
-      onTap: () => ref
-          .read(posProvider.notifier)
-          .setSelectedCategory(label == 'Semua' ? '' : label),
+      onTap: () {
+        FocusScope.of(context).unfocus();
+        ref
+            .read(posProvider.notifier)
+            .setSelectedCategory(label == 'Semua' ? '' : label);
+      },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         padding: EdgeInsets.symmetric(
@@ -489,8 +492,10 @@ class _POSScreenState extends ConsumerState<POSScreen> {
         return _ProductCardWithPrice(
           product: products[index],
           branchId: branchId,
-          onTap: (isHomeVisit) =>
-              ref.read(posProvider.notifier).addToCart(products[index], isHomeVisit: isHomeVisit),
+          onTap: (isHomeVisit) {
+            FocusScope.of(context).unfocus();
+            ref.read(posProvider.notifier).addToCart(products[index], isHomeVisit: isHomeVisit);
+          },
         );
       },
     );

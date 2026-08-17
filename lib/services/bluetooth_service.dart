@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 class BluetoothPrinterDevice {
   final String name;
@@ -24,11 +25,9 @@ class BluetoothService {
 
   BluetoothService._internal();
 
-  final FlutterBluetoothSerial _bluetooth = FlutterBluetoothSerial.instance;
-  
-  BluetoothConnection? _connection;
-  StreamSubscription? _discoverySubscription;
-  StreamSubscription? _connectionStatusSubscription;
+  BluetoothDevice? _connectedDeviceInternal;
+  StreamSubscription? _connectionStateSubscription;
+  StreamSubscription? _adapterStateSubscription;
   Timer? _reconnectTimer;
   
   bool _isEnabled = false;
@@ -53,18 +52,18 @@ class BluetoothService {
   List<BluetoothPrinterDevice> get pairedDevices => List.unmodifiable(_pairedDevices);
 
   /// Whether Bluetooth thermal printing is supported on this platform.
-  /// `flutter_bluetooth_serial` supports Android, iOS, macOS, and Linux —
+  /// `flutter_blue_plus` supports Android only.
   /// NOT Windows desktop. On unsupported platforms the service becomes a
   /// safe no-op so the rest of the app keeps working normally.
   static bool get isSupported {
     if (kIsWeb) return false;
-    return !Platform.isWindows;
+    return Platform.isAndroid;
   }
 
   /// Initialize Bluetooth service with auto-connect to known printers
   Future<void> initialize() async {
     if (!isSupported) {
-      debugPrint('[Bluetooth] ⚠️ Bluetooth printing is not supported on this platform (Windows)');
+      debugPrint('[Bluetooth] ⚠️ Bluetooth printing is not supported on this platform');
       _isEnabled = false;
       _isConnected = false;
       _statusController.add(false);
@@ -72,16 +71,10 @@ class BluetoothService {
     }
 
     try {
-      _isEnabled = await _bluetooth.isEnabled ?? false;
-      debugPrint('[Bluetooth] Initialized: enabled=$_isEnabled');
-      
-      // Emit initial state
-      _statusController.add(false);
-      
-      // Listen to Bluetooth status changes
-      _bluetooth.onStateChanged().listen((state) {
-        _isEnabled = state == BluetoothState.STATE_ON;
-        debugPrint('[Bluetooth] State changed: ${_isEnabled ? 'ON' : 'OFF'}');
+      // Listen to adapter state changes
+      FlutterBluePlus.adapterState.listen((BluetoothAdapterState state) {
+        _isEnabled = state == BluetoothAdapterState.on;
+        debugPrint('[Bluetooth] Adapter state: ${_isEnabled ? 'ON' : 'OFF'}');
         
         // Auto-reconnect when Bluetooth is turned back on
         if (_isEnabled && !_isConnected) {
@@ -91,6 +84,13 @@ class BluetoothService {
         
         _statusController.add(_isConnected);
       });
+      
+      // Get initial adapter state
+      _isEnabled = await FlutterBluePlus.adapterState.first == BluetoothAdapterState.on;
+      debugPrint('[Bluetooth] Initialized: enabled=$_isEnabled');
+      
+      // Emit initial state
+      _statusController.add(false);
       
       // Get paired devices and attempt auto-connect
       await getPairedDevices();
@@ -147,12 +147,13 @@ class BluetoothService {
         return;
       }
 
-      final devices = await _bluetooth.getBondedDevices();
+      // Get bonded/paired devices from system
+      final devices = await FlutterBluePlus.bondedDevices;
       _pairedDevices.clear();
       for (var device in devices) {
         _pairedDevices.add(BluetoothPrinterDevice(
-          name: device.name ?? 'Unknown Device',
-          address: device.address,
+          name: device.platformName ?? 'Unknown Device',
+          address: device.remoteId.str,
         ));
       }
       
@@ -163,7 +164,7 @@ class BluetoothService {
     }
   }
 
-  /// Connect to device
+  /// Connect to device by MAC address
   Future<bool> connect(String deviceAddress) async {
     if (!isSupported) {
       debugPrint('[Bluetooth] Bluetooth printing is not supported on this platform');
@@ -176,24 +177,39 @@ class BluetoothService {
       }
 
       debugPrint('[Bluetooth] Connecting to $deviceAddress...');
-      _connection = await BluetoothConnection.toAddress(deviceAddress);
+      
+      // Find the device from bonded devices
+      final devices = await FlutterBluePlus.bondedDevices;
+      final device = devices.firstWhere(
+        (d) => d.remoteId.str.toUpperCase() == deviceAddress.toUpperCase(),
+        orElse: () => throw Exception('Device not found: $deviceAddress'),
+      );
+      
+      // Connect to the device
+      await device.connect();
+      _connectedDeviceInternal = device;
+      
+      // Listen for connection state changes
+      _connectionStateSubscription = device.connectionState.listen((state) {
+        if (state == BluetoothConnectionState.disconnected) {
+          debugPrint('[Bluetooth] Device disconnected');
+          _isConnected = false;
+          _connectedDevice = null;
+          _statusController.add(false);
+        }
+      });
       
       _isConnected = true;
       _connectedDevice = _pairedDevices.firstWhere(
-        (d) => d.address == deviceAddress,
+        (d) => d.address.toUpperCase() == deviceAddress.toUpperCase(),
         orElse: () => BluetoothPrinterDevice(
-          name: 'Unknown Device',
+          name: device.platformName ?? 'Unknown Device',
           address: deviceAddress,
         ),
       );
 
       debugPrint('[Bluetooth] ✓ Connected to ${_connectedDevice?.name}');
       _statusController.add(true);
-
-      // Listen for connection closed
-      _connection?.input?.listen((_) {}).onDone(() {
-        disconnect();
-      });
 
       return true;
     } catch (e) {
@@ -207,10 +223,12 @@ class BluetoothService {
   /// Disconnect from device
   Future<void> disconnect() async {
     try {
-      if (_connection != null) {
-        await _connection?.close();
-        _connection = null;
+      if (_connectedDeviceInternal != null) {
+        await _connectedDeviceInternal!.disconnect();
+        _connectedDeviceInternal = null;
       }
+      _connectionStateSubscription?.cancel();
+      _connectionStateSubscription = null;
       _isConnected = false;
       _connectedDevice = null;
       debugPrint('[Bluetooth] Disconnected');
@@ -220,26 +238,49 @@ class BluetoothService {
     }
   }
 
-  /// Send data to connected device
+  /// Send data to connected device via SPP/RFCOMM
   Future<bool> sendData(List<int> data) async {
     try {
-      if (!isSupported || !_isConnected || _connection == null) {
+      if (!isSupported || !_isConnected || _connectedDeviceInternal == null) {
         debugPrint('[Bluetooth] Not connected');
         return false;
       }
 
-      final uint8data = Uint8List.fromList(data);
-      _connection!.output.add(uint8data);
-      await _connection!.output.allSent;
-      debugPrint('[Bluetooth] Data sent: ${data.length} bytes');
-      return true;
+      // Write to the SPP service characteristic
+      // Standard SPP service UUID: 00001101-0000-1000-8000-00805F9B34FB
+      final sppServiceUuid = Guid('00001101-0000-1000-8000-00805F9B34FB');
+      
+      // Discover services first if needed
+      List<BluetoothService> services;
+      try {
+        services = await _connectedDeviceInternal!.discoverServices();
+      } catch (e) {
+        debugPrint('[Bluetooth] Service discovery error: $e');
+        return false;
+      }
+      
+      // Find SPP service and write characteristic
+      for (var service in services) {
+        if (service.uuid == sppServiceUuid) {
+          for (var characteristic in service.characteristics) {
+            if (characteristic.properties.write || characteristic.properties.writeWithoutResponse) {
+              await characteristic.write(Uint8List.fromList(data));
+              debugPrint('[Bluetooth] Data sent: ${data.length} bytes');
+              return true;
+            }
+          }
+        }
+      }
+      
+      debugPrint('[Bluetooth] SPP service not found');
+      return false;
     } catch (e) {
       debugPrint('[Bluetooth] Send error: $e');
       return false;
     }
   }
 
-  /// Enable Bluetooth
+  /// Enable Bluetooth adapter
   Future<void> enableBluetooth() async {
     if (!isSupported) {
       debugPrint('[Bluetooth] Bluetooth printing is not supported on this platform');
@@ -247,7 +288,7 @@ class BluetoothService {
     }
 
     try {
-      await _bluetooth.requestEnable();
+      await FlutterBluePlus.turnOn();
       debugPrint('[Bluetooth] ✓ Bluetooth enabled');
     } catch (e) {
       debugPrint('[Bluetooth] Enable error: $e');
@@ -257,10 +298,10 @@ class BluetoothService {
   /// Cleanup
   void dispose() {
     _reconnectTimer?.cancel();
+    _adapterStateSubscription?.cancel();
+    _connectionStateSubscription?.cancel();
     _statusController.close();
     _devicesController.close();
-    _discoverySubscription?.cancel();
-    _connectionStatusSubscription?.cancel();
     disconnect();
   }
 }

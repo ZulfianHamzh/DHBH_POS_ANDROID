@@ -18,7 +18,7 @@ dependencies:
   flutter_local_notifications: ^18.0.1
   intl: ^0.20.2
   google_fonts: ^6.2.1
-  flutter_bluetooth_serial: ^0.4.0
+  flutter_blue_plus: ^1.35.7
   flutter_thermal_printer_windows:
     path: third_party/flutter_thermal_printer_windows
   sqflite: ^2.4.1
