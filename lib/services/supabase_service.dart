@@ -377,7 +377,7 @@ class SupabaseService {
         }
 
         return txn.Transaction(
-          id: (row['order_no'] as int).toString(),
+          id: row['id'] as String, // Gunakan UUID asli dari database
           orderNo: row['order_no'] as int,
           cashierId: row['cashier_id'] as String? ?? '',
           branchId: row['branch_id'] as int?,

@@ -1025,14 +1025,16 @@ class _POSScreenState extends ConsumerState<POSScreen> {
 
     // Jika names tidak null (user menekan Hold), proses hold
     if (names != null && names.isNotEmpty && mounted) {
-      ref.read(posProvider.notifier).holdCurrentOrder(customerNames: names);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Pesanan ditahan'),
-          behavior: SnackBarBehavior.floating,
-          margin: EdgeInsets.all(16),
-        ),
-      );
+      await ref.read(posProvider.notifier).holdCurrentOrder(customerNames: names);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Pesanan ditahan'),
+            behavior: SnackBarBehavior.floating,
+            margin: EdgeInsets.all(16),
+          ),
+        );
+      }
     }
   }
 
