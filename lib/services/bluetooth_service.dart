@@ -246,11 +246,14 @@ class BluetoothService {
         return false;
       }
 
-      // Write to the SPP service characteristic
+      // Convert to Uint8List
+      final bytes = Uint8List.fromList(data);
+      
+      // For thermal printers, we can write directly to the device's SPP service
       // Standard SPP service UUID: 00001101-0000-1000-8000-00805F9B34FB
       final sppServiceUuid = fbp.Guid('00001101-0000-1000-8000-00805F9B34FB');
       
-      // Discover services first if needed
+      // Discover services
       List<fbp.BluetoothService> services;
       try {
         services = await _connectedDeviceInternal!.discoverServices();
@@ -262,10 +265,12 @@ class BluetoothService {
       // Find SPP service and write characteristic
       for (var service in services) {
         if (service.remoteId == sppServiceUuid) {
-          for (var characteristic in service.characteristics) {
+          // Create a mutable list from characteristics
+          final characteristics = List<fbp.BluetoothCharacteristic>.from(service.characteristics);
+          for (var characteristic in characteristics) {
             if (characteristic.properties.write || characteristic.properties.writeWithoutResponse) {
-              await characteristic.write(Uint8List.fromList(data));
-              debugPrint('[Bluetooth] Data sent: ${data.length} bytes');
+              await characteristic.write(bytes);
+              debugPrint('[Bluetooth] Data sent: ${bytes.length} bytes');
               return true;
             }
           }
