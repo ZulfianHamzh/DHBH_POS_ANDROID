@@ -25,3 +25,5 @@ lcov.info
 build/
 dist/
 ```
+
+.dart_tool

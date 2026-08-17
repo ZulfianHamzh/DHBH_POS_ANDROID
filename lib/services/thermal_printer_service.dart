@@ -183,6 +183,7 @@ class ThermalPrinterService {
     receipt.addAll(_stringToBytes('Selamat datang kembali'));
     receipt.addAll(_lineFeed);
     receipt.addAll(_lineFeed);
+    receipt.addAll(_lineFeed);
 
     // Cut paper
     receipt.addAll(_cutPaper);
@@ -357,6 +358,7 @@ class ThermalPrinterService {
     receipt.addAll(_stringToBytes('Terima kasih'));
     receipt.addAll(_lineFeed);
     receipt.addAll(_lineFeed);
+    receipt.addAll(_lineFeed);
 
     receipt.addAll(_cutPaper);
     return receipt;
@@ -466,6 +468,7 @@ class ThermalPrinterService {
     receipt.addAll(_stringToBytes('Terima kasih'));
     receipt.addAll(_lineFeed);
     receipt.addAll(_lineFeed);
+    receipt.addAll(_lineFeed);
 
     receipt.addAll(_cutPaper);
     return receipt;
@@ -561,13 +564,15 @@ class ThermalPrinterService {
 
   /// Convert string to bytes (ASCII)
   List<int> _stringToBytes(String text) {
-    return text.codeUnits;
+    return List<int>.from(text.codeUnits);
   }
 
   /// Membuat baris dengan label di kiri dan value di kanan, tepat 32 karakter.
   /// Contoh: "Kasir: John              Rp100.000"
   List<int> _printRow(String label, String value) {
-    return _stringToBytes(_padRow('$label:', value))..addAll(_lineFeed);
+    final row = _stringToBytes(_padRow('$label:', value));
+    row.addAll(_lineFeed);
+    return row;
   }
 
   /// Pad row: label di kiri, value di kanan, total 32 karakter.
@@ -587,12 +592,16 @@ class ThermalPrinterService {
 
   /// Print dotted line (--------------------------------) 32 karakter.
   List<int> _printDottedLine() {
-    return _stringToBytes('-' * _lineWidth)..addAll(_lineFeed);
+    final line = _stringToBytes('-' * _lineWidth);
+    line.addAll(_lineFeed);
+    return line;
   }
 
   /// Print double line (================================) untuk penekanan.
   List<int> _printDoubleLine() {
-    return _stringToBytes('=' * _lineWidth)..addAll(_lineFeed);
+    final line = _stringToBytes('=' * _lineWidth);
+    line.addAll(_lineFeed);
+    return line;
   }
 
   /// Truncate text ke maxChars dengan menambahkan "..." di akhir.
