@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_thermal_printer_windows/flutter_thermal_printer_windows.dart'
-    as tp;
+as tp;
 import '../services/bluetooth_service.dart';
 import '../services/windows_bluetooth_printer_service.dart';
 import '../providers/bluetooth_provider.dart';
@@ -122,23 +122,23 @@ class _BluetoothConnectionDialogState
           pairedAsync.when(
             data: (devices) => devices.isEmpty
                 ? Padding(
-                    padding: EdgeInsets.symmetric(
-                      vertical: ResponsiveUtils.spaceSmall,
-                    ),
-                    child: Text(
-                      'No paired Bluetooth printers found',
-                      style: TextStyle(
-                        fontSize: ResponsiveUtils.fontSmall,
-                        color: Colors.grey,
-                      ),
-                    ),
-                  )
+              padding: EdgeInsets.symmetric(
+                vertical: ResponsiveUtils.spaceSmall,
+              ),
+              child: Text(
+                'No paired Bluetooth printers found',
+                style: TextStyle(
+                  fontSize: ResponsiveUtils.fontSmall,
+                  color: Colors.grey,
+                ),
+              ),
+            )
                 : Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: devices
-                        .map((d) => _buildWindowsDeviceTile(service, d))
-                        .toList(),
-                  ),
+              mainAxisSize: MainAxisSize.min,
+              children: devices
+                  .map((d) => _buildWindowsDeviceTile(service, d))
+                  .toList(),
+            ),
             loading: () => const Padding(
               padding: EdgeInsets.all(8),
               child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
@@ -162,9 +162,9 @@ class _BluetoothConnectionDialogState
   }
 
   Widget _buildWindowsDeviceTile(
-    WindowsBluetoothPrinterService service,
-    tp.BluetoothPrinter device,
-  ) {
+      WindowsBluetoothPrinterService service,
+      tp.BluetoothPrinter device,
+      ) {
     final isConnected = service.connectedPrinter?.id == device.id;
     return Card(
       margin: EdgeInsets.only(bottom: ResponsiveUtils.spaceXSmall),
@@ -186,23 +186,24 @@ class _BluetoothConnectionDialogState
         ),
         trailing: isConnected
             ? TextButton(
-                onPressed: () async {
-                  await service.disconnect();
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Printer terputus')),
-                    );
-                  }
-                },
-                child: const Text('Disconnect'),
-              )
+          onPressed: () async {
+            await service.disconnect();
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Printer terputus')),
+              );
+            }
+          },
+          child: const Text('Disconnect'),
+        )
             : TextButton(
-                onPressed: () => _connectWindowsDevice(service, device),
-                child: const Text('Connect'),
-              ),
+          onPressed: () => _connectWindowsDevice(service, device),
+          child: const Text('Connect'),
+        ),
       ),
     );
   }
+
   /// Extracts a clean MAC address from a Windows Bluetooth id such as
   /// "Bluetooth#Bluetooth04:7f:0e:7f:06:97-66:12:3f:23:ef:92#RFCOMM...".
   String _cleanDeviceMac(tp.BluetoothPrinter device) {
@@ -216,10 +217,11 @@ class _BluetoothConnectionDialogState
     }
     return raw;
   }
+
   Future<void> _connectWindowsDevice(
-    WindowsBluetoothPrinterService service,
-    tp.BluetoothPrinter device,
-  ) async {
+      WindowsBluetoothPrinterService service,
+      tp.BluetoothPrinter device,
+      ) async {
     setState(() => _isConnecting = true);
     var ok = await service.connect(device);
     if (!ok && !device.isPaired) {
@@ -241,8 +243,8 @@ class _BluetoothConnectionDialogState
   }
 
   Future<void> _scanWindowsPrinters(
-    WindowsBluetoothPrinterService service,
-  ) async {
+      WindowsBluetoothPrinterService service,
+      ) async {
     setState(() => _scanning = true);
     final results = await service.scanForPrinters(
       timeout: const Duration(seconds: 15),
@@ -256,8 +258,8 @@ class _BluetoothConnectionDialogState
   }
 
   Future<void> _printWindowsTest(
-    WindowsBluetoothPrinterService service,
-  ) async {
+      WindowsBluetoothPrinterService service,
+      ) async {
     final ok = await service.printTestReceipt();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -286,10 +288,10 @@ class _BluetoothConnectionDialogState
         padding: ResponsiveUtils.paddingNormal,
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start, // Menjaga teks kiri agar rapi
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Title
-            Center( // Membuat judul tetap di tengah jika diinginkan
+            Center(
               child: Text(
                 'Connect Thermal Printer',
                 style: TextStyle(
@@ -332,7 +334,7 @@ class _BluetoothConnectionDialogState
             ),
             SizedBox(height: ResponsiveUtils.spaceSmall),
 
-            // Perubahan Utama: Dibungkus dengan Flexible agar list device bisa di-scroll saat penuh
+            // Flexible device list
             Flexible(
               child: devicesAsync.when(
                 data: (devices) {
@@ -359,14 +361,16 @@ class _BluetoothConnectionDialogState
                     );
                   }
 
-                  // Menggunakan SingleChildScrollView + Column (atau ListView biasa) 
-                  // di dalam Flexible agar terhindar dari benturan ukuran (constraint)
                   return ListView.builder(
                     shrinkWrap: true,
                     itemCount: devices.length,
                     padding: EdgeInsets.zero,
                     itemBuilder: (context, index) {
                       final device = devices[index];
+                      final isThisConnected = bluetooth.isConnected &&
+                          bluetooth.connectedDevice?.address.toUpperCase() ==
+                              device.address.toUpperCase();
+
                       return Card(
                         margin: EdgeInsets.only(
                           bottom: ResponsiveUtils.spaceXSmall,
@@ -388,15 +392,22 @@ class _BluetoothConnectionDialogState
                             ),
                             child: Row(
                               children: [
-                                Radio<BluetoothPrinterDevice>(
-                                  value: device,
-                                  groupValue: _selectedDevice,
-                                  onChanged: (value) {
-                                    setState(() {
-                                      _selectedDevice = value;
-                                    });
-                                  },
-                                ),
+                                if (isThisConnected)
+                                  const Padding(
+                                    padding: EdgeInsets.all(8.0),
+                                    child: Icon(Icons.check_circle,
+                                        color: Colors.green, size: 20),
+                                  )
+                                else
+                                  Radio<BluetoothPrinterDevice>(
+                                    value: device,
+                                    groupValue: _selectedDevice,
+                                    onChanged: (value) {
+                                      setState(() {
+                                        _selectedDevice = value;
+                                      });
+                                    },
+                                  ),
                                 SizedBox(width: ResponsiveUtils.spaceSmall),
                                 Expanded(
                                   child: Column(
@@ -406,21 +417,40 @@ class _BluetoothConnectionDialogState
                                         device.name,
                                         style: TextStyle(
                                           fontSize: ResponsiveUtils.fontNormal,
+                                          fontWeight: isThisConnected
+                                              ? FontWeight.bold
+                                              : FontWeight.normal,
+                                          color: isThisConnected
+                                              ? Colors.green.shade700
+                                              : Colors.black87,
                                         ),
                                       ),
                                       SizedBox(
                                         height: ResponsiveUtils.spaceXSmall,
                                       ),
                                       Text(
-                                        device.address,
+                                        isThisConnected
+                                            ? '${device.address} • Connected'
+                                            : device.address,
                                         style: TextStyle(
                                           fontSize: ResponsiveUtils.fontSmall,
-                                          color: Colors.grey,
+                                          color: isThisConnected
+                                              ? Colors.green
+                                              : Colors.grey,
                                         ),
                                       ),
                                     ],
                                   ),
                                 ),
+                                if (isThisConnected)
+                                  TextButton(
+                                    onPressed: () async {
+                                      await bluetooth.disconnect();
+                                      setState(() {});
+                                    },
+                                    child: const Text('Disconnect',
+                                        style: TextStyle(color: Colors.red)),
+                                  ),
                               ],
                             ),
                           ),
@@ -466,28 +496,45 @@ class _BluetoothConnectionDialogState
                     style: TextStyle(fontSize: ResponsiveUtils.fontNormal),
                   ),
                 ),
-                // The Android "Connect" button is hidden on Windows — the
-                // Windows Bluetooth section has its own connect controls.
                 if (!WindowsBluetoothPrinterService.isSupported) ...[
                   SizedBox(width: ResponsiveUtils.spaceSmall),
-                  ElevatedButton(
-                    onPressed: _isConnecting || _selectedDevice == null
-                        ? null
-                        : _handleConnect,
-                    child: _isConnecting
-                        ? SizedBox(
-                            height: ResponsiveUtils.iconNormal,
-                            width: ResponsiveUtils.iconNormal,
-                            child: const CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : Text(
-                            'Connect',
-                            style: TextStyle(fontSize: ResponsiveUtils.fontNormal),
-                          ),
-                  ),
+                  if (bluetooth.isConnected)
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                      ),
+                      onPressed: _isConnecting
+                          ? null
+                          : () async {
+                        setState(() => _isConnecting = true);
+                        await bluetooth.disconnect();
+                        setState(() => _isConnecting = false);
+                      },
+                      child: const Text(
+                        'Disconnect Printer',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    )
+                  else
+                    ElevatedButton(
+                      onPressed: _isConnecting || _selectedDevice == null
+                          ? null
+                          : _handleConnect,
+                      child: _isConnecting
+                          ? SizedBox(
+                        height: ResponsiveUtils.iconNormal,
+                        width: ResponsiveUtils.iconNormal,
+                        child: const CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                          : Text(
+                        'Connect',
+                        style: TextStyle(
+                            fontSize: ResponsiveUtils.fontNormal),
+                      ),
+                    ),
                 ],
               ],
             ),

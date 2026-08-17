@@ -28,12 +28,12 @@ class PosProvider extends StateNotifier<PosState> {
   final HeldOrderRepository _heldOrderRepo;
 
   PosProvider(
-    this._supabase, {
-    required AuthRepository authRepo,
-    required ProductRepository productRepo,
-    required TransactionRepository transactionRepo,
-    required HeldOrderRepository heldOrderRepo,
-  })  : _authRepo = authRepo,
+      this._supabase, {
+        required AuthRepository authRepo,
+        required ProductRepository productRepo,
+        required TransactionRepository transactionRepo,
+        required HeldOrderRepository heldOrderRepo,
+      })  : _authRepo = authRepo,
         _productRepo = productRepo,
         _transactionRepo = transactionRepo,
         _heldOrderRepo = heldOrderRepo,
@@ -52,16 +52,16 @@ class PosProvider extends StateNotifier<PosState> {
           throw TimeoutException('Login timeout: Server tidak merespons dalam waktu yang ditentukan');
         },
       );
-      
+
       if (user == null) {
         debugPrint('[DHBH Provider] login FAILED: user null');
         state = state.copyWith(isLoading: false);
         return 'Email atau password salah';
       }
-      
+
       debugPrint('[DHBH Provider] login SUCCESS: ${user.name} (${user.role.name})');
       state = state.copyWith(currentUser: user, isLoading: false);
-      
+
       // Log activity
       try {
         await _supabase.logActivity(user.id, 'login', details: {'email': email});
@@ -147,12 +147,12 @@ class PosProvider extends StateNotifier<PosState> {
   Future<void> loadProducts() async {
     debugPrint('[DHBH Provider] ════════════════ loadProducts ════════════════');
     state = state.copyWith(isLoading: true);
-    
+
     try {
       // Load products directly from Supabase
       final products = await _productRepo.getProducts();
       debugPrint('[DHBH Provider] Products loaded: ${products.length}');
-      
+
       // Load transactions directly from Supabase
       List<Transaction> transactions = [];
       try {
@@ -163,7 +163,7 @@ class PosProvider extends StateNotifier<PosState> {
       } catch (e) {
         debugPrint('[DHBH Provider] Transactions load error: $e');
       }
-      
+
       // Load held orders from Supabase
       List<HeldOrder> heldOrders = [];
       try {
@@ -175,7 +175,7 @@ class PosProvider extends StateNotifier<PosState> {
       } catch (e) {
         debugPrint('[DHBH Provider] HeldOrders load error: $e');
       }
-      
+
       state = state.copyWith(
         products: products,
         transactions: transactions,
@@ -193,7 +193,7 @@ class PosProvider extends StateNotifier<PosState> {
   void addToCart(Product product, {bool isHomeVisit = false}) {
     final branchId = state.currentUser?.branchId;
     final existingIndex = state.cartItems.indexWhere(
-      (item) => item.product.id == product.id && item.isHomeVisit == isHomeVisit,
+          (item) => item.product.id == product.id && item.isHomeVisit == isHomeVisit,
     );
     final updatedCart = [...state.cartItems];
     if (existingIndex >= 0) {
@@ -263,7 +263,7 @@ class PosProvider extends StateNotifier<PosState> {
     }
     final grandTotal = (cartTotal - discount) < 0 ? 0 : cartTotal - discount;
     debugPrint('[DHBH Provider] completeTransaction: total=$cartTotal, discount=$discount, grandTotal=$grandTotal, method=${paymentMethod.name}');
-    
+
     // Save transaction directly to Supabase via repository
     final transaction = await _transactionRepo.saveTransaction(
       cashierId: state.currentUser!.id,
@@ -281,7 +281,7 @@ class PosProvider extends StateNotifier<PosState> {
       notes: notes,
       branchName: state.currentUser?.branchName,
     );
-    
+
     // Add to local state
     state = state.copyWith(
       cartItems: [],
@@ -289,7 +289,7 @@ class PosProvider extends StateNotifier<PosState> {
       transactions: [...state.transactions, transaction],
     );
     debugPrint('[DHBH Provider] cart cleared, ${state.transactions.length} total transactions');
-    
+
     // Auto-print receipt if printer is connected
     _tryAutoPrint(transaction);
   }
@@ -415,7 +415,7 @@ class PosProvider extends StateNotifier<PosState> {
     } catch (e) {
       debugPrint('[DHBH Provider] updateProduct reload error: $e');
       final updatedList = state.products.map((p) =>
-        p.id == updatedProduct.id ? updatedProduct : p,
+      p.id == updatedProduct.id ? updatedProduct : p,
       ).toList();
       state = state.copyWith(products: updatedList);
     }
@@ -450,10 +450,10 @@ class PosProvider extends StateNotifier<PosState> {
     return state.transactions.where((t) {
       final wib = t.createdAt.toUtc().add(WibTime.offset);
       return wib.year == today.year &&
-        wib.month == today.month &&
-        wib.day == today.day &&
-        (branchId == null || t.branchId == branchId) &&
-        t.status == TransactionStatus.completed;
+          wib.month == today.month &&
+          wib.day == today.day &&
+          (branchId == null || t.branchId == branchId) &&
+          t.status == TransactionStatus.completed;
     }).length;
   }
 
@@ -463,10 +463,10 @@ class PosProvider extends StateNotifier<PosState> {
     return state.transactions.where((t) {
       final wib = t.createdAt.toUtc().add(WibTime.offset);
       return wib.year == today.year &&
-        wib.month == today.month &&
-        wib.day == today.day &&
-        (branchId == null || t.branchId == branchId) &&
-        t.status == TransactionStatus.completed;
+          wib.month == today.month &&
+          wib.day == today.day &&
+          (branchId == null || t.branchId == branchId) &&
+          t.status == TransactionStatus.completed;
     }).fold(0, (sum, t) => sum + t.totalAmount);
   }
 
@@ -474,6 +474,12 @@ class PosProvider extends StateNotifier<PosState> {
 
   Future<bool> printTransaction(Transaction transaction) async {
     debugPrint('[DHBH Provider] printTransaction: id=${transaction.id}, orderNo=${transaction.orderNo}');
+    debugPrint('[Printer] ============ PRINT TRANSACTION ============');
+    debugPrint('[Printer] Branch: ${transaction.branchName}');
+    debugPrint('[Printer] Cashier: ${transaction.cashierName}');
+    debugPrint('[Printer] Customer: ${transaction.customerNames}');
+    debugPrint('[Printer] Terapis: ${transaction.terapisNames}');
+    debugPrint('[Printer] ===========================================');
     bool printSuccess = false;
     try {
       // Windows desktop: prefer a connected Bluetooth thermal printer; fall
@@ -486,13 +492,13 @@ class PosProvider extends StateNotifier<PosState> {
           printSuccess = await btPrinter.printTransaction(transaction);
         } else if (await WindowsPrinterService().isPrinterReady) {
           printSuccess =
-              await WindowsPrinterService().printTransaction(transaction);
+          await WindowsPrinterService().printTransaction(transaction);
         } else {
           debugPrint('[DHBH Provider] printTransaction SKIP: no printer ready');
         }
       } else if (WindowsPrinterService.isAvailable) {
         printSuccess =
-            await WindowsPrinterService().printTransaction(transaction);
+        await WindowsPrinterService().printTransaction(transaction);
       } else {
         final printer = ThermalPrinterService();
         printSuccess = await printer.printTransaction(transaction);
@@ -500,7 +506,7 @@ class PosProvider extends StateNotifier<PosState> {
     } catch (e) {
       debugPrint('[DHBH Provider] printTransaction print error: $e');
     }
-    
+
     // Always try to update status in DB (don't let DB failure affect print result)
     if (transaction.orderNo != null) {
       try {
@@ -514,7 +520,7 @@ class PosProvider extends StateNotifier<PosState> {
     } else {
       debugPrint('[DHBH Provider] printTransaction SKIP DB update: no orderNo (offline)');
     }
-    
+
     // Update local state regardless
     final updatedTrans = state.transactions.map((t) {
       if (t.id == transaction.id) {
@@ -542,7 +548,7 @@ class PosProvider extends StateNotifier<PosState> {
       return t;
     }).toList();
     state = state.copyWith(transactions: updatedTrans);
-    
+
     debugPrint('[DHBH Provider] printTransaction ${printSuccess ? "SUCCESS" : "FAILED"}');
     return printSuccess;
   }
@@ -552,7 +558,7 @@ class PosProvider extends StateNotifier<PosState> {
     final unprintedTrans = state.transactions
         .where((t) => t.printStatus == PrintStatus.unprinted)
         .toList();
-    
+
     if (unprintedTrans.isEmpty) {
       debugPrint('[DHBH Provider] No unprinted transactions');
       return;
@@ -560,7 +566,7 @@ class PosProvider extends StateNotifier<PosState> {
 
     final printer = ThermalPrinterService();
     int successCount = 0;
-    
+
     for (final transaction in unprintedTrans) {
       final success = await printer.printTransaction(transaction);
       if (success && transaction.orderNo != null) {
@@ -570,7 +576,7 @@ class PosProvider extends StateNotifier<PosState> {
     }
 
     debugPrint('[DHBH Provider] printUnprintedTransactions: $successCount/${unprintedTrans.length} printed');
-    
+
     // Refresh transactions
     await loadProducts();
   }

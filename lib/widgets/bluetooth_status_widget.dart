@@ -12,6 +12,7 @@ import 'bluetooth_connection_dialog.dart';
 class BluetoothStatusWidget extends ConsumerWidget {
   final VoidCallback? onTap;
 
+
   const BluetoothStatusWidget({
     super.key,
     this.onTap,
@@ -134,11 +135,11 @@ class BluetoothStatusWidget extends ConsumerWidget {
 
   /// Shared printer status chip (green when available, red otherwise).
   Widget _buildStatusChip(
-    BuildContext context,
-    bool active,
-    String label,
-    String tooltip,
-  ) {
+      BuildContext context,
+      bool active,
+      String label,
+      String tooltip,
+      ) {
     return GestureDetector(
       onTap: () {
         onTap?.call();

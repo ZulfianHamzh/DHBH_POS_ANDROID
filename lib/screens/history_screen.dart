@@ -23,6 +23,17 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   Timer? _debounce;
 
   @override
+  void initState() {
+    super.initState();
+    // Pastikan tidak ada fokus otomatis saat layar dibuka
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        FocusScope.of(context).unfocus();
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _searchController.dispose();
     _debounce?.cancel();
@@ -43,9 +54,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     final query = _searchController.text.toLowerCase().trim();
     if (query.isNotEmpty) {
       transactions = transactions.where((t) =>
-        t.id.toLowerCase().contains(query) ||
-        t.cashierName.toLowerCase().contains(query) ||
-        (t.customerName?.toLowerCase().contains(query) ?? false)
+      t.id.toLowerCase().contains(query) ||
+          t.cashierName.toLowerCase().contains(query) ||
+          (t.customerName?.toLowerCase().contains(query) ?? false)
       ).toList();
     }
     switch (_sortBy) {
@@ -66,54 +77,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     );
   }
 
-  Widget _buildHeader() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: const BoxDecoration(
-              color: AppColors.primaryGreen,
-              borderRadius: BorderRadius.all(Radius.circular(12)),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primaryGreen,
-                  blurRadius: 8,
-                  offset: Offset(0, 4),
-                ),
-              ],
-            ),
-            child: const Icon(Icons.history, color: Colors.white, size: 24),
-          ),
-          const SizedBox(width: 14),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Riwayat Transaksi',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.darkBlue,
-                  ),
-                ),
-                SizedBox(height: 2),
-                Text(
-                  'Pantau dan kelola semua transaksi',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+
 
   Widget _buildSearchAndSort() {
     return Padding(
@@ -121,48 +85,53 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Colors.grey.shade200),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.02),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: _searchController,
+            builder: (context, value, child) {
+              return Container(
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.grey.shade200),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.02),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: TextField(
-              controller: _searchController,
-              onChanged: (_) {
-                _debounce?.cancel();
-                _debounce = Timer(const Duration(milliseconds: 300), () {
-                  if (mounted) setState(() {});
-                });
-              },
-              decoration: InputDecoration(
-                hintText: 'Cari ID, kasir, atau pelanggan...',
-                hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
-                prefixIcon: Icon(Icons.search, color: Colors.grey.shade600, size: 22),
-                suffixIcon: _searchController.text.isNotEmpty
-                  ? IconButton(
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: (_) {
+                    _debounce?.cancel();
+                    _debounce = Timer(const Duration(milliseconds: 300), () {
+                      if (mounted) setState(() {});
+                    });
+                  },
+                  decoration: InputDecoration(
+                    hintText: 'Cari ID, kasir, atau pelanggan...',
+                    hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
+                    prefixIcon: Icon(Icons.search, color: Colors.grey.shade600, size: 22),
+                    suffixIcon: value.text.isNotEmpty
+                        ? IconButton(
                       icon: Icon(Icons.clear, size: 18, color: Colors.grey.shade500),
                       onPressed: () {
                         _searchController.clear();
                         setState(() {});
                       },
                     )
-                  : null,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide.none,
+                        : null,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  ),
+                  style: const TextStyle(fontSize: 14),
                 ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              ),
-              style: const TextStyle(fontSize: 14),
-            ),
+              );
+            },
           ),
           const SizedBox(height: 12),
           SingleChildScrollView(
@@ -194,7 +163,10 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   Widget _buildSortChip(String value, String label, IconData icon) {
     final isSelected = _sortBy == value;
     return InkWell(
-      onTap: () => setState(() => _sortBy = value),
+      onTap: () {
+        FocusScope.of(context).unfocus();
+        setState(() => _sortBy = value);
+      },
       borderRadius: BorderRadius.circular(20),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -242,31 +214,30 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
 
     return Column(
       children: [
-        _buildHeader(),
         _buildSearchAndSort(),
         Expanded(
           child: transactions.isEmpty
               ? _buildEmptyState(
-                  icon: Icons.search_off,
-                  title: 'Transaksi tidak ditemukan',
-                  subtitle: 'Coba kata kunci pencarian lain',
-                )
+            icon: Icons.search_off,
+            title: 'Transaksi tidak ditemukan',
+            subtitle: 'Coba kata kunci pencarian lain',
+          )
               : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  itemCount: transactions.length,
-                  itemBuilder: (context, index) {
-                    final transaction = transactions[index];
-                    return _TransactionCard(
-                      transaction: transaction,
-                      currencyFormat: currencyFormat,
-                      dateFormat: dateFormat,
-                      supabaseService: supabaseService,
-                      cashierId: cashierId,
-                      onRefund: () => notifier.loadProducts(),
-                    );
-                  },
-                ),
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+            physics: const AlwaysScrollableScrollPhysics(),
+            itemCount: transactions.length,
+            itemBuilder: (context, index) {
+              final transaction = transactions[index];
+              return _TransactionCard(
+                transaction: transaction,
+                currencyFormat: currencyFormat,
+                dateFormat: dateFormat,
+                supabaseService: supabaseService,
+                cashierId: cashierId,
+                onRefund: () => notifier.loadProducts(),
+              );
+            },
+          ),
         ),
       ],
     );
@@ -405,7 +376,7 @@ class _TransactionCardState extends State<_TransactionCard> {
                   children: [
                     Expanded(
                       child: Text(
-                        '#${t.id}',
+                        '#${t.orderNo}',
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.bold,
@@ -736,8 +707,8 @@ class _TransactionCardState extends State<_TransactionCard> {
                               SnackBar(
                                 content: Text(
                                   success
-                                    ? (isPrinted ? 'Copy printed successfully' : 'Print success')
-                                    : 'Print failed - printer not connected',
+                                      ? (isPrinted ? 'Copy printed successfully' : 'Print success')
+                                      : 'Print failed - printer not connected',
                                 ),
                                 backgroundColor: success ? Colors.green : Colors.red,
                                 duration: const Duration(seconds: 2),
@@ -801,6 +772,7 @@ class _TransactionCardState extends State<_TransactionCard> {
   }
 
   void _showRefundDialog(Transaction transaction) {
+    FocusScope.of(context).unfocus(); // Sembunyikan keyboard jika ada
     final reasonController = TextEditingController();
     showDialog(
       context: context,
@@ -846,6 +818,7 @@ class _TransactionCardState extends State<_TransactionCard> {
               TextField(
                 controller: reasonController,
                 maxLines: 3,
+                autofocus: false, // Tidak autofocus
                 decoration: InputDecoration(
                   labelText: 'Alasan Refund',
                   border: OutlineInputBorder(
@@ -875,7 +848,7 @@ class _TransactionCardState extends State<_TransactionCard> {
               }
               try {
                 await widget.supabaseService.processRefund(
-                  transactionId: int.tryParse(transaction.id) ?? 0,
+                  transactionId: int.tryParse(transaction.id) ?? 0, // wajib: transactions.id
                   reason: reason,
                   refundAmount: transaction.totalAmount,
                   cashierId: widget.cashierId,
@@ -915,15 +888,19 @@ class _TransactionCardState extends State<_TransactionCard> {
       case TransactionStatus.completed:
         icon = Icons.check_circle;
         color = AppColors.primaryGreen;
+        break;
       case TransactionStatus.pending:
         icon = Icons.schedule;
         color = Colors.orange;
+        break;
       case TransactionStatus.cancelled:
         icon = Icons.cancel;
         color = Colors.red;
+        break;
       case TransactionStatus.refunded:
         icon = Icons.replay;
         color = Colors.blueGrey;
+        break;
     }
     return Container(
       width: 44,

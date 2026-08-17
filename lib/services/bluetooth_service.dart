@@ -4,8 +4,6 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart' as fbp;
 
-import 'bluetooth_service.dart' as fbp hide BluetoothService;
-
 class BluetoothPrinterDevice {
   final String name;
   final String address;
@@ -31,13 +29,14 @@ class BluetoothService {
   StreamSubscription? _connectionStateSubscription;
   StreamSubscription? _adapterStateSubscription;
   Timer? _reconnectTimer;
-  
+
   bool _isEnabled = false;
   bool _isConnected = false;
-  fbp.BluetoothPrinterDevice? _connectedDevice;
-  final List<fbp.BluetoothPrinterDevice> _pairedDevices = [];
+  BluetoothPrinterDevice? _connectedDevice;
+  final List<BluetoothPrinterDevice> _pairedDevices = [];
+
   final _statusController = StreamController<bool>.broadcast();
-  final _devicesController = StreamController<List<fbp.BluetoothPrinterDevice>>.broadcast();
+  final _devicesController = StreamController<List<BluetoothPrinterDevice>>.broadcast();
 
   // Auto-connect MAC addresses for DHBH printers
   static const List<String> _autoConnectAddresses = [
@@ -46,17 +45,15 @@ class BluetoothService {
   ];
 
   Stream<bool> get statusStream => _statusController.stream;
-  Stream<List<fbp.BluetoothPrinterDevice>> get devicesStream => _devicesController.stream;
-  
+  Stream<List<BluetoothPrinterDevice>> get devicesStream => _devicesController.stream;
+
   bool get isConnected => _isConnected;
   bool get isEnabled => _isEnabled;
-  fbp.BluetoothPrinterDevice? get connectedDevice => _connectedDevice;
-  List<fbp.BluetoothPrinterDevice> get pairedDevices => List.unmodifiable(_pairedDevices);
+  BluetoothPrinterDevice? get connectedDevice => _connectedDevice;
+  List<BluetoothPrinterDevice> get pairedDevices => List.unmodifiable(_pairedDevices);
 
   /// Whether Bluetooth thermal printing is supported on this platform.
   /// `flutter_blue_plus` supports Android only.
-  /// NOT Windows desktop. On unsupported platforms the service becomes a
-  /// safe no-op so the rest of the app keeps working normally.
   static bool get isSupported {
     if (kIsWeb) return false;
     return Platform.isAndroid;
@@ -74,26 +71,32 @@ class BluetoothService {
 
     try {
       // Listen to adapter state changes
-      fbp.FlutterBluePlus.adapterState.listen((fbp.BluetoothAdapterState state) {
+      _adapterStateSubscription = fbp.FlutterBluePlus.adapterState.listen((fbp.BluetoothAdapterState state) {
         _isEnabled = state == fbp.BluetoothAdapterState.on;
         debugPrint('[Bluetooth] Adapter state: ${_isEnabled ? 'ON' : 'OFF'}');
-        
-        // Auto-reconnect when Bluetooth is turned back on
-        if (_isEnabled && !_isConnected) {
-          debugPrint('[Bluetooth] Bluetooth enabled, attempting auto-connect...');
-          _tryAutoConnect();
+
+        if (!_isEnabled) {
+          _isConnected = false;
+          _connectedDevice = null;
+          _statusController.add(false);
+        } else {
+          // Auto-reconnect when Bluetooth is turned back on
+          if (_isEnabled && !_isConnected) {
+            debugPrint('[Bluetooth] Bluetooth enabled, attempting auto-connect...');
+            _tryAutoConnect();
+          }
         }
-        
-        _statusController.add(_isConnected);
       });
-      
+
       // Get initial adapter state
       _isEnabled = await fbp.FlutterBluePlus.adapterState.first == fbp.BluetoothAdapterState.on;
       debugPrint('[Bluetooth] Initialized: enabled=$_isEnabled');
-      
-      // Emit initial state
-      _statusController.add(false);
-      
+
+      if (!_isEnabled) {
+        _statusController.add(false);
+        return;
+      }
+
       // Get paired devices and attempt auto-connect
       await getPairedDevices();
       await _tryAutoConnect();
@@ -111,16 +114,16 @@ class BluetoothService {
     }
 
     debugPrint('[Bluetooth] Attempting auto-connect to known printers...');
-    
+
     for (final address in _autoConnectAddresses) {
       debugPrint('[Bluetooth] Checking device: $address');
-      
+
       // Check if this device is in paired devices
       final pairedDevice = _pairedDevices.firstWhere(
-        (d) => d.address.toUpperCase() == address.toUpperCase(),
-        orElse: () => fbp.BluetoothPrinterDevice(name: '', address: ''),
+            (d) => d.address.toUpperCase() == address.toUpperCase(),
+        orElse: () => BluetoothPrinterDevice(name: '', address: ''),
       );
-      
+
       if (pairedDevice.address.isNotEmpty) {
         debugPrint('[Bluetooth] Found paired device: ${pairedDevice.name} ($address)');
         final success = await connect(address);
@@ -132,7 +135,7 @@ class BluetoothService {
         debugPrint('[Bluetooth] Device $address not found in paired devices');
       }
     }
-    
+
     debugPrint('[Bluetooth] Auto-connect failed - no known printers available');
   }
 
@@ -153,12 +156,12 @@ class BluetoothService {
       final devices = await fbp.FlutterBluePlus.bondedDevices;
       _pairedDevices.clear();
       for (var device in devices) {
-        _pairedDevices.add(fbp.BluetoothPrinterDevice(
+        _pairedDevices.add(BluetoothPrinterDevice(
           name: device.platformName ?? 'Unknown Device',
           address: device.remoteId.str,
         ));
       }
-      
+
       _devicesController.add(_pairedDevices);
       debugPrint('[Bluetooth] Found ${_pairedDevices.length} paired devices');
     } catch (e) {
@@ -179,18 +182,18 @@ class BluetoothService {
       }
 
       debugPrint('[Bluetooth] Connecting to $deviceAddress...');
-      
+
       // Find the device from bonded devices
       final devices = await fbp.FlutterBluePlus.bondedDevices;
       final device = devices.firstWhere(
-        (d) => d.remoteId.str.toUpperCase() == deviceAddress.toUpperCase(),
+            (d) => d.remoteId.str.toUpperCase() == deviceAddress.toUpperCase(),
         orElse: () => throw Exception('Device not found: $deviceAddress'),
       );
-      
+
       // Connect to the device
       await device.connect();
       _connectedDeviceInternal = device;
-      
+
       // Listen for connection state changes
       _connectionStateSubscription = device.connectionState.listen((state) {
         if (state == fbp.BluetoothConnectionState.disconnected) {
@@ -200,11 +203,11 @@ class BluetoothService {
           _statusController.add(false);
         }
       });
-      
+
       _isConnected = true;
       _connectedDevice = _pairedDevices.firstWhere(
-        (d) => d.address.toUpperCase() == deviceAddress.toUpperCase(),
-        orElse: () => fbp.BluetoothPrinterDevice(
+            (d) => d.address.toUpperCase() == deviceAddress.toUpperCase(),
+        orElse: () => BluetoothPrinterDevice(
           name: device.platformName ?? 'Unknown Device',
           address: deviceAddress,
         ),
@@ -240,7 +243,7 @@ class BluetoothService {
     }
   }
 
-  /// Send data to connected device via SPP/RFCOMM
+  /// Send data to connected device via BLE
   Future<bool> sendData(List<int> data) async {
     try {
       if (!isSupported || !_isConnected || _connectedDeviceInternal == null) {
@@ -248,11 +251,6 @@ class BluetoothService {
         return false;
       }
 
-      // Write to the SPP service characteristic
-      // Standard SPP service UUID: 00001101-0000-1000-8000-00805F9B34FB
-      final sppServiceUuid = fbp.Guid('00001101-0000-1000-8000-00805F9B34FB');
-      
-      // Discover services first if needed
       List<fbp.BluetoothService> services;
       try {
         services = await _connectedDeviceInternal!.discoverServices();
@@ -260,21 +258,37 @@ class BluetoothService {
         debugPrint('[Bluetooth] Service discovery error: $e');
         return false;
       }
-      
-      // Find SPP service and write characteristic
+
+      // Dynamic Discovery: Cari karakteristik mana saja yang bisa di-write
       for (var service in services) {
-        if (service.remoteId == sppServiceUuid) {
-          for (var characteristic in service.characteristics) {
-            if (characteristic.properties.write || characteristic.properties.writeWithoutResponse) {
-              await characteristic.write(Uint8List.fromList(data));
-              debugPrint('[Bluetooth] Data sent: ${data.length} bytes');
-              return true;
+        for (var characteristic in service.characteristics) {
+          if (characteristic.properties.write || characteristic.properties.writeWithoutResponse) {
+
+            debugPrint('[Bluetooth] Found writable characteristic: ${characteristic.uuid}');
+
+            // BLE mengharuskan data dipotong-potong
+            const int chunkSize = 150;
+
+            for (int i = 0; i < data.length; i += chunkSize) {
+              int end = (i + chunkSize < data.length) ? i + chunkSize : data.length;
+              List<int> chunk = data.sublist(i, end);
+
+              await characteristic.write(
+                chunk,
+                withoutResponse: characteristic.properties.writeWithoutResponse,
+              );
+
+              // Jeda agar buffer printer tidak penuh
+              await Future.delayed(const Duration(milliseconds: 15));
             }
+
+            debugPrint('[Bluetooth] ✓ Print data sent: ${data.length} bytes');
+            return true;
           }
         }
       }
-      
-      debugPrint('[Bluetooth] SPP service not found');
+
+      debugPrint('[Bluetooth] Writable BLE characteristic not found on this printer');
       return false;
     } catch (e) {
       debugPrint('[Bluetooth] Send error: $e');
