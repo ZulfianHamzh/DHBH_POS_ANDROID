@@ -21,12 +21,12 @@ void main() async {
 
   // Optimize for Android tablets with limited RAM (2GB)
   // Handle memory pressure to prevent OOM crashes
-  SystemChannels.memoryPressure.setMessageHandler((dynamic message) async {
-    debugPrint('[DHBH] Memory pressure received, clearing caches');
-    // Clear image cache
-    PaintingBinding.instance.imageCache.clear();
-    PaintingBinding.instance.imageCache.clearLiveImages();
-  });
+  // SystemChannels.memoryPressure.setMessageHandler((dynamic message) async {
+  //   debugPrint('[DHBH] Memory pressure received, clearing caches');
+  //   // Clear image cache
+  //   PaintingBinding.instance.imageCache.clear();
+  //   PaintingBinding.instance.imageCache.clearLiveImages();
+  // });
   
   // Set up error handling for uncaught exceptions — log to console AND to a
   // file (%TEMP%\dhbh_flutter_errors.log) so layout/overflow errors can be
